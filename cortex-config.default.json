@@ -1,0 +1,18 @@
+{
+  "sections": {
+    "loc": true,
+    "env": true,
+    "context": true,
+    "usage": true,
+    "disk": true,
+    "pwd": true,
+    "memory": true,
+    "activity": true
+  },
+  "activity": {
+    "1d": true,
+    "1w": true,
+    "1mo": true,
+    "year": true
+  }
+}
