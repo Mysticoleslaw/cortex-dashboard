@@ -116,7 +116,7 @@ def render():
         has_today = False
         for h in range(24):
             m = hourly.get((today_str, h), 0)
-            bl = bar_level(m, thresholds=(1, 5, 15, 30, 60, 90))
+            bl = bar_level(m, thresholds=(1, 10, 20, 30, 45, 60))
             color = COLORS[min(bl, 4)] if bl > 0 else C0
             row_1d += f"{color}{BARS[bl]}{RESET}"
             if bl > 0:
@@ -132,7 +132,7 @@ def render():
         for i in range(7):
             d = sunday + timedelta(days=i)
             mins = daily.get(d.strftime("%Y-%m-%d"), 0)
-            bl = bar_level(mins, thresholds=(5, 30, 60, 120, 180, 240))
+            bl = bar_level(mins, thresholds=(10, 60, 120, 240, 360, 480))
             color = COLORS[min(bl, 4)] if bl > 0 else C0
             day_lbl = d.strftime("%a")[0]
             if d > today:
@@ -146,7 +146,7 @@ def render():
         for i in range(29, -1, -1):
             d = today - timedelta(days=i)
             mins = daily.get(d.strftime("%Y-%m-%d"), 0)
-            bl = bar_level(mins, thresholds=(5, 30, 60, 120, 180, 240))
+            bl = bar_level(mins, thresholds=(10, 60, 120, 240, 360, 480))
             if bl == 0:
                 row_1mo += f"{C0}▁{RESET}"
             else:
