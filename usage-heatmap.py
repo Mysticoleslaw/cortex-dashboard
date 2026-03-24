@@ -126,104 +126,62 @@ def render():
         lines.append(row_1d)
 
     if acfg["1w"]:
-        hour_blocks = [(0, 2), (2, 4), (4, 6), (6, 8), (8, 10), (10, 12),
-                       (12, 14), (14, 16), (16, 18), (18, 20), (20, 22), (22, 24)]
-        blk_labels = ["0h", "2h", "4h", "6h", "8h", "10h",
-                      "12h", "14h", "16h", "18h", "20h", "22h"]
+        row_1w = f"   {DIM}1w:{RESET} "
         days_since_sunday = (today.weekday() + 1) % 7
         sunday = today - timedelta(days=days_since_sunday)
-
-        for b_idx, (h_start, h_end) in enumerate(hour_blocks):
-            if b_idx == 0:
-                row = f"   {DIM}1w:{RESET} "
-            else:
-                row = "       "
-
-            for i in range(7):
-                d = sunday + timedelta(days=i)
-                d_str = d.strftime("%Y-%m-%d")
-                if d > today:
-                    row += f"{C0}▪{RESET}"
-                else:
-                    total = sum(hourly.get((d_str, h), 0)
-                                for h in range(h_start, h_end))
-                    level = intensity(total, thresholds=(3, 15, 30, 60))
-                    if level == 0:
-                        row += f"{C0}▪{RESET}"
-                    else:
-                        row += f"{COLORS[level]}■{RESET}"
-
-            row += f"  {DIM}{blk_labels[b_idx]:>3}{RESET}"
-            lines.append(row)
-
-        day_row = "       "
         for i in range(7):
             d = sunday + timedelta(days=i)
-            day_row += d.strftime("%a")[0]
-        lines.append(f"{DIM}{day_row}{RESET}")
+            mins = daily.get(d.strftime("%Y-%m-%d"), 0)
+            bl = bar_level(mins, thresholds=(5, 30, 60, 120, 180, 240))
+            color = COLORS[min(bl, 4)] if bl > 0 else C0
+            day_lbl = d.strftime("%a")[0]
+            if d > today:
+                row_1w += f"{DIM}{day_lbl}{RESET} {C0}{BARS[0]}{RESET}  "
+            else:
+                row_1w += f"{DIM}{day_lbl}{RESET} {color}{BARS[bl]}{RESET}  "
+        lines.append(row_1w)
 
     if acfg["1mo"]:
-        hour_blocks = [(0, 2), (2, 4), (4, 6), (6, 8), (8, 10), (10, 12),
-                       (12, 14), (14, 16), (16, 18), (18, 20), (20, 22), (22, 24)]
-        blk_labels = ["0h", "2h", "4h", "6h", "8h", "10h",
-                      "12h", "14h", "16h", "18h", "20h", "22h"]
-
-        for b_idx, (h_start, h_end) in enumerate(hour_blocks):
-            if b_idx == 0:
-                row = f"  {DIM}1mo:{RESET} "
+        row_1mo = f"  {DIM}1mo:{RESET} "
+        for i in range(29, -1, -1):
+            d = today - timedelta(days=i)
+            mins = daily.get(d.strftime("%Y-%m-%d"), 0)
+            bl = bar_level(mins, thresholds=(5, 30, 60, 120, 180, 240))
+            if bl == 0:
+                row_1mo += f"{C0}▁{RESET}"
             else:
-                row = "       "
-
-            for i in range(29, -1, -1):
-                d = today - timedelta(days=i)
-                d_str = d.strftime("%Y-%m-%d")
-                total = sum(hourly.get((d_str, h), 0)
-                            for h in range(h_start, h_end))
-                level = intensity(total, thresholds=(3, 15, 30, 60))
-                if level == 0:
-                    row += f"{C0}▪{RESET}"
-                else:
-                    row += f"{COLORS[level]}■{RESET}"
-
-            row += f"  {DIM}{blk_labels[b_idx]:>3}{RESET}"
-            lines.append(row)
+                color = COLORS[min(bl, 4)]
+                row_1mo += f"{color}{BARS[bl]}{RESET}"
+        lines.append(row_1mo)
 
     if acfg["year"]:
-        hour_blocks = [(0, 2), (2, 4), (4, 6), (6, 8), (8, 10), (10, 12),
-                       (12, 14), (14, 16), (16, 18), (18, 20), (20, 22), (22, 24)]
-        blk_labels = ["   0h ", "   2h ", "   4h ", "   6h ", "   8h ", "  10h ",
-                      "  12h ", "  14h ", "  16h ", "  18h ", "  20h ", "  22h "]
-
         weeks = 52
         days_since_monday = today.weekday()
         end_of_week = today + timedelta(days=(6 - days_since_monday))
         start = end_of_week - timedelta(days=(weeks * 7) - 1)
 
-        for b_idx, (h_start, h_end) in enumerate(hour_blocks):
-            label = blk_labels[b_idx]
+        for dow in range(7):
+            if dow == 0:
+                label = "  Mon "
+            elif dow == 2:
+                label = "  Wed "
+            elif dow == 4:
+                label = "  Fri "
+            else:
+                label = "      "
+
             row = f"{DIM}{label}{RESET}"
-
             for week in range(weeks):
-                week_start = start + timedelta(days=week * 7)
-                total = 0
-                all_future = True
-                for dow in range(7):
-                    d = week_start + timedelta(days=dow)
-                    if d <= today:
-                        all_future = False
-                        d_str = d.strftime("%Y-%m-%d")
-                        total += sum(hourly.get((d_str, h), 0)
-                                     for h in range(h_start, h_end))
-
-                if all_future:
+                d = start + timedelta(days=(week * 7) + dow)
+                if d > today:
                     row += f"{C0}▪{RESET}"
                 else:
-                    level = intensity(total, thresholds=(10, 30, 90, 210))
+                    mins = daily.get(d.strftime("%Y-%m-%d"), 0)
+                    level = intensity(mins)
                     if level == 0:
                         row += f"{C0}▪{RESET}"
                     else:
                         row += f"{COLORS[level]}■{RESET}"
-
             lines.append(row)
 
         month_row = "      "
