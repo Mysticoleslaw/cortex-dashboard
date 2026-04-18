@@ -94,12 +94,19 @@ def main(stdscr):
         stdscr.clear()
         height, width = stdscr.getmaxyx()
 
+        def safe_addstr(yy, xx, text, attr=0):
+            if yy < 0 or yy >= height - 1 or xx < 0 or xx >= width:
+                return
+            try:
+                stdscr.addstr(yy, xx, text[: max(0, width - xx - 1)], attr)
+            except curses.error:
+                pass
+
         # Title
-        title = "── CORTEX · Config ──"
-        stdscr.addstr(1, 2, title, curses.color_pair(7) | curses.A_BOLD)
+        safe_addstr(1, 2, "── CORTEX · Config ──", curses.color_pair(7) | curses.A_BOLD)
 
         # Sections header
-        stdscr.addstr(3, 4, "SECTIONS", curses.color_pair(1) | curses.A_BOLD)
+        safe_addstr(3, 4, "SECTIONS", curses.color_pair(1) | curses.A_BOLD)
         y = 5
 
         for i, (key, label) in enumerate(SECTIONS):
@@ -108,19 +115,17 @@ def main(stdscr):
             val_color = curses.color_pair(2) if is_on else curses.color_pair(3)
 
             if selected == i:
-                # Highlighted row
                 row = f"  {label:<45} {val_str:>8}"
-                padded = row.ljust(width - 4)
-                stdscr.addstr(y, 2, padded[:width-4], curses.color_pair(4) | curses.A_BOLD)
+                safe_addstr(y, 2, row.ljust(width - 4), curses.color_pair(4) | curses.A_BOLD)
             else:
-                stdscr.addstr(y, 4, f"{label:<45}", curses.color_pair(6))
-                stdscr.addstr(y, 49, val_str, val_color)
+                safe_addstr(y, 4, f"{label:<45}", curses.color_pair(6))
+                safe_addstr(y, 49, val_str, val_color)
             y += 1
 
         # Plan sub-toggles
         y += 1
-        stdscr.addstr(y, 4, "PLAN BARS", curses.color_pair(5) | curses.A_BOLD)
-        y += 2
+        safe_addstr(y, 4, "PLAN BARS", curses.color_pair(5) | curses.A_BOLD)
+        y += 1
 
         for j, (sub_key, sub_label) in enumerate(PLAN_SUBS):
             item_idx = sep1 + 1 + j
@@ -130,17 +135,16 @@ def main(stdscr):
 
             if selected == item_idx:
                 row = f"  {sub_label:<45} {val_str:>8}"
-                padded = row.ljust(width - 4)
-                stdscr.addstr(y, 2, padded[:width-4], curses.color_pair(4) | curses.A_BOLD)
+                safe_addstr(y, 2, row.ljust(width - 4), curses.color_pair(4) | curses.A_BOLD)
             else:
-                stdscr.addstr(y, 4, f"{sub_label:<45}", curses.color_pair(6))
-                stdscr.addstr(y, 49, val_str, val_color)
+                safe_addstr(y, 4, f"{sub_label:<45}", curses.color_pair(6))
+                safe_addstr(y, 49, val_str, val_color)
             y += 1
 
         # Activity sub-toggles
         y += 1
-        stdscr.addstr(y, 4, "ACTIVITY VIEWS", curses.color_pair(5) | curses.A_BOLD)
-        y += 2
+        safe_addstr(y, 4, "ACTIVITY VIEWS", curses.color_pair(5) | curses.A_BOLD)
+        y += 1
 
         for j, (sub_key, sub_label) in enumerate(ACTIVITY_SUBS):
             item_idx = sep2 + 1 + j
@@ -150,37 +154,38 @@ def main(stdscr):
 
             if selected == item_idx:
                 row = f"  {sub_label:<45} {val_str:>8}"
-                padded = row.ljust(width - 4)
-                stdscr.addstr(y, 2, padded[:width-4], curses.color_pair(4) | curses.A_BOLD)
+                safe_addstr(y, 2, row.ljust(width - 4), curses.color_pair(4) | curses.A_BOLD)
             else:
-                stdscr.addstr(y, 4, f"{sub_label:<45}", curses.color_pair(6))
-                stdscr.addstr(y, 49, val_str, val_color)
+                safe_addstr(y, 4, f"{sub_label:<45}", curses.color_pair(6))
+                safe_addstr(y, 49, val_str, val_color)
             y += 1
 
         # Presets
         y += 1
-        stdscr.addstr(y, 4, "PRESETS", curses.color_pair(5) | curses.A_BOLD)
-        y += 2
+        safe_addstr(y, 4, "PRESETS", curses.color_pair(5) | curses.A_BOLD)
+        y += 1
 
         for j, (preset_key, preset_label) in enumerate(PRESETS):
             item_idx = sep3 + 1 + j
             if selected == item_idx:
                 row = f"  {preset_label:<45}"
-                padded = row.ljust(width - 4)
-                stdscr.addstr(y, 2, padded[:width-4], curses.color_pair(4) | curses.A_BOLD)
+                safe_addstr(y, 2, row.ljust(width - 4), curses.color_pair(4) | curses.A_BOLD)
             else:
-                stdscr.addstr(y, 4, preset_label, curses.color_pair(6))
+                safe_addstr(y, 4, preset_label, curses.color_pair(6))
             y += 1
 
         # Footer
-        footer_y = min(y + 2, height - 3)
+        footer_y = min(y + 1, height - 2)
         if message:
-            stdscr.addstr(footer_y, 4, message, curses.color_pair(2))
+            safe_addstr(footer_y, 4, message, curses.color_pair(2))
             footer_y += 1
 
-        controls = "Space: toggle · Enter: save & exit · q: quit without saving"
-        if footer_y < height - 1:
-            stdscr.addstr(footer_y + 1, 4, controls, curses.color_pair(1))
+        safe_addstr(
+            footer_y,
+            4,
+            "Space: toggle · Enter: save & exit · q: quit without saving",
+            curses.color_pair(1),
+        )
 
         stdscr.refresh()
 
