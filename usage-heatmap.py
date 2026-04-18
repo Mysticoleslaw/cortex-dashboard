@@ -132,7 +132,7 @@ def render():
         for i in range(7):
             d = sunday + timedelta(days=i)
             mins = daily.get(d.strftime("%Y-%m-%d"), 0)
-            bl = bar_level(mins, thresholds=(10, 60, 120, 240, 360, 480))
+            bl = bar_level(mins, thresholds=(30, 180, 360, 720, 1080, 1440))
             color = COLORS[min(bl, 4)] if bl > 0 else C0
             day_lbl = d.strftime("%a")[0]
             if d > today:
@@ -146,7 +146,7 @@ def render():
         for i in range(29, -1, -1):
             d = today - timedelta(days=i)
             mins = daily.get(d.strftime("%Y-%m-%d"), 0)
-            bl = bar_level(mins, thresholds=(10, 60, 120, 240, 360, 480))
+            bl = bar_level(mins, thresholds=(30, 180, 360, 720, 1080, 1440))
             if bl == 0:
                 row_1mo += f"{C0}▁{RESET}"
             else:
