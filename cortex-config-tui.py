@@ -12,6 +12,7 @@ SECTIONS = [
     ("loc",      "Location (city, time, weather)"),
     ("env",      "Environment (version, model, cost)"),
     ("context",  "Context window progress bar"),
+    ("plan",     "Plan usage limits (5h + 7d)"),
     ("usage",    "Usage (lines, tokens, cache, burn)"),
     ("disk",     "Disk usage"),
     ("pwd",      "Working directory + git status"),

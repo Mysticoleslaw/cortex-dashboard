@@ -129,6 +129,54 @@ BAR=""
 printf '%b' "${DOT} ${D}CONTEXT:${RESET} ${BAR_COLOR}${BAR}${RESET} ${W}${PCT}%${RESET}\n"
 fi
 
+# ── PLAN usage limits ──
+if section_enabled plan; then
+HAS_RATE_LIMITS=$(echo "$input" | jq -r 'if .rate_limits then "true" else "false" end')
+if [ "$HAS_RATE_LIMITS" = "true" ]; then
+    NOW=$(date +%s)
+    PLAN_BAR_WIDTH=40
+
+    render_plan_bar() {
+        local label="$1" pct="$2" resets_at="$3"
+        local pct_int=${pct%.*}
+        [ -z "$pct_int" ] && pct_int=0
+
+        local color dot
+        if [ "$pct_int" -ge 90 ]; then color="$R"; dot="${R}●${RESET}"
+        elif [ "$pct_int" -ge 70 ]; then color="$Y"; dot="${Y}●${RESET}"
+        else color="$G"; dot="${B}●${RESET}"; fi
+
+        local filled=$((pct_int * PLAN_BAR_WIDTH / 100))
+        local empty=$((PLAN_BAR_WIDTH - filled))
+        local bar=""
+        [ "$filled" -gt 0 ] && printf -v f "%${filled}s" && bar="${f// /━}"
+        [ "$empty" -gt 0 ]  && printf -v p "%${empty}s"  && bar="${bar}${p// /╌}"
+
+        local secs=$((resets_at - NOW))
+        local reset_str
+        if [ "$secs" -le 0 ]; then
+            reset_str="resetting"
+        elif [ "$secs" -lt 3600 ]; then
+            reset_str="in $((secs / 60))m"
+        elif [ "$secs" -lt 86400 ]; then
+            reset_str="in $((secs / 3600))h $(((secs % 3600) / 60))m"
+        else
+            reset_str="in $((secs / 86400))d $(((secs % 86400) / 3600))h"
+        fi
+
+        printf '%b' "${dot} ${D}${label}:${RESET} ${color}${bar}${RESET} ${W}${pct_int}%${RESET} ${D}· resets ${reset_str}${RESET}\n"
+    }
+
+    P5_PCT=$(echo "$input"   | jq -r '.rate_limits.five_hour.used_percentage // 0')
+    P5_RESET=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // 0')
+    P7_PCT=$(echo "$input"   | jq -r '.rate_limits.seven_day.used_percentage // 0')
+    P7_RESET=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // 0')
+
+    render_plan_bar "PLAN 5h" "$P5_PCT" "$P5_RESET"
+    render_plan_bar "PLAN 7d" "$P7_PCT" "$P7_RESET"
+fi
+fi
+
 # ── USAGE + Cache + Burn rate ──
 if section_enabled usage; then
 MINS=$((DURATION_MS / 60000))

@@ -3,6 +3,7 @@
     "loc": true,
     "env": true,
     "context": true,
+    "plan": true,
     "usage": true,
     "disk": true,
     "pwd": true,
