@@ -16,6 +16,16 @@ section_enabled() {
     fi
 }
 
+subsection_enabled() {
+    local category="$1" sub="$2"
+    if [ -f "$CORTEX_CONFIG" ]; then
+        local val=$(jq -r "if .\"${category}\".\"${sub}\" == false then \"false\" else \"true\" end" "$CORTEX_CONFIG" 2>/dev/null)
+        [ "$val" = "true" ]
+    else
+        return 0  # default: enabled when key missing
+    fi
+}
+
 # ── Colors ──
 C='\033[36m'      # cyan
 G='\033[32m'      # green
@@ -167,13 +177,17 @@ if [ "$HAS_RATE_LIMITS" = "true" ]; then
         printf '%b' "${dot} ${D}${label}:${RESET} ${color}${bar}${RESET} ${W}${pct_int}%${RESET} ${D}· resets ${reset_str}${RESET}\n"
     }
 
-    P5_PCT=$(echo "$input"   | jq -r '.rate_limits.five_hour.used_percentage // 0')
-    P5_RESET=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // 0')
-    P7_PCT=$(echo "$input"   | jq -r '.rate_limits.seven_day.used_percentage // 0')
-    P7_RESET=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // 0')
+    if subsection_enabled plan 5h; then
+        P5_PCT=$(echo "$input"   | jq -r '.rate_limits.five_hour.used_percentage // 0')
+        P5_RESET=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // 0')
+        render_plan_bar "PLAN 5h" "$P5_PCT" "$P5_RESET"
+    fi
 
-    render_plan_bar "PLAN 5h" "$P5_PCT" "$P5_RESET"
-    render_plan_bar "PLAN 7d" "$P7_PCT" "$P7_RESET"
+    if subsection_enabled plan 7d; then
+        P7_PCT=$(echo "$input"   | jq -r '.rate_limits.seven_day.used_percentage // 0')
+        P7_RESET=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // 0')
+        render_plan_bar "PLAN 7d" "$P7_PCT" "$P7_RESET"
+    fi
 fi
 fi
 

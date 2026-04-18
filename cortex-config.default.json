@@ -10,6 +10,10 @@
     "memory": true,
     "activity": true
   },
+  "plan": {
+    "5h": true,
+    "7d": true
+  },
   "activity": {
     "1d": true,
     "1w": true,

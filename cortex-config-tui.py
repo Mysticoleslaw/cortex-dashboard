@@ -20,6 +20,11 @@ SECTIONS = [
     ("activity", "Activity heatmap (1d, 1w, 1mo, year)"),
 ]
 
+PLAN_SUBS = [
+    ("5h", "Plan: 5-hour rate limit bar"),
+    ("7d", "Plan: 7-day rate limit bar"),
+]
+
 ACTIVITY_SUBS = [
     ("1d",   "Activity: Today (24h hourly bars)"),
     ("1w",   "Activity: This week (Sun-Sat)"),
@@ -75,10 +80,13 @@ def main(stdscr):
 
     config = load_config()
     selected = 0
-    # sections + sep + activity subs + sep + presets
-    total_items = len(SECTIONS) + 1 + len(ACTIVITY_SUBS) + 1 + len(PRESETS)
-    sep1 = len(SECTIONS)              # first separator (after sections)
-    sep2 = sep1 + 1 + len(ACTIVITY_SUBS)  # second separator (after activity subs)
+    # sections + sep + plan subs + sep + activity subs + sep + presets
+    total_items = (
+        len(SECTIONS) + 1 + len(PLAN_SUBS) + 1 + len(ACTIVITY_SUBS) + 1 + len(PRESETS)
+    )
+    sep1 = len(SECTIONS)                          # separator before PLAN_SUBS
+    sep2 = sep1 + 1 + len(PLAN_SUBS)              # separator before ACTIVITY_SUBS
+    sep3 = sep2 + 1 + len(ACTIVITY_SUBS)          # separator before PRESETS
     modified = False
     message = ""
 
@@ -109,13 +117,33 @@ def main(stdscr):
                 stdscr.addstr(y, 49, val_str, val_color)
             y += 1
 
+        # Plan sub-toggles
+        y += 1
+        stdscr.addstr(y, 4, "PLAN BARS", curses.color_pair(5) | curses.A_BOLD)
+        y += 2
+
+        for j, (sub_key, sub_label) in enumerate(PLAN_SUBS):
+            item_idx = sep1 + 1 + j
+            is_on = config.get("plan", {}).get(sub_key, True)
+            val_str = "true" if is_on else "false"
+            val_color = curses.color_pair(2) if is_on else curses.color_pair(3)
+
+            if selected == item_idx:
+                row = f"  {sub_label:<45} {val_str:>8}"
+                padded = row.ljust(width - 4)
+                stdscr.addstr(y, 2, padded[:width-4], curses.color_pair(4) | curses.A_BOLD)
+            else:
+                stdscr.addstr(y, 4, f"{sub_label:<45}", curses.color_pair(6))
+                stdscr.addstr(y, 49, val_str, val_color)
+            y += 1
+
         # Activity sub-toggles
         y += 1
         stdscr.addstr(y, 4, "ACTIVITY VIEWS", curses.color_pair(5) | curses.A_BOLD)
         y += 2
 
         for j, (sub_key, sub_label) in enumerate(ACTIVITY_SUBS):
-            item_idx = sep1 + 1 + j
+            item_idx = sep2 + 1 + j
             is_on = config.get("activity", {}).get(sub_key, True)
             val_str = "true" if is_on else "false"
             val_color = curses.color_pair(2) if is_on else curses.color_pair(3)
@@ -135,7 +163,7 @@ def main(stdscr):
         y += 2
 
         for j, (preset_key, preset_label) in enumerate(PRESETS):
-            item_idx = sep2 + 1 + j
+            item_idx = sep3 + 1 + j
             if selected == item_idx:
                 row = f"  {preset_label:<45}"
                 padded = row.ljust(width - 4)
@@ -181,6 +209,8 @@ def main(stdscr):
                 selected = sep1 - 1
             if selected == sep2:
                 selected = sep2 - 1
+            if selected == sep3:
+                selected = sep3 - 1
             message = ""
 
         elif key == curses.KEY_DOWN or key == ord("j"):
@@ -189,6 +219,8 @@ def main(stdscr):
                 selected = sep1 + 1
             if selected == sep2:
                 selected = sep2 + 1
+            if selected == sep3:
+                selected = sep3 + 1
             message = ""
 
         elif key == ord(" "):
@@ -201,17 +233,26 @@ def main(stdscr):
                 message = f"  {SECTIONS[selected][1]} → {state}"
                 modified = True
             elif sep1 < selected < sep2:
-                # Toggle activity sub-view
+                # Toggle plan sub-bar
                 sub_idx = selected - sep1 - 1
+                sub_key = PLAN_SUBS[sub_idx][0]
+                current = config.get("plan", {}).get(sub_key, True)
+                config.setdefault("plan", {})[sub_key] = not current
+                state = "ON" if not current else "OFF"
+                message = f"  {PLAN_SUBS[sub_idx][1]} → {state}"
+                modified = True
+            elif sep2 < selected < sep3:
+                # Toggle activity sub-view
+                sub_idx = selected - sep2 - 1
                 sub_key = ACTIVITY_SUBS[sub_idx][0]
                 current = config.get("activity", {}).get(sub_key, True)
                 config.setdefault("activity", {})[sub_key] = not current
                 state = "ON" if not current else "OFF"
                 message = f"  {ACTIVITY_SUBS[sub_idx][1]} → {state}"
                 modified = True
-            elif selected > sep2:
+            elif selected > sep3:
                 # Apply preset
-                preset_idx = selected - sep2 - 1
+                preset_idx = selected - sep3 - 1
                 preset_key = PRESETS[preset_idx][0]
                 apply_preset(config, preset_key)
                 message = f"  Applied preset: {PRESETS[preset_idx][1]}"

@@ -131,7 +131,7 @@ Shows Claude plan (rate-limit) usage across all your sessions — the same data 
 | Reset countdown | `· resets in 1h 54m` | Human-readable time until that window resets |
 | ● dot color | 🔵/🟡/🔴 | Same thresholds as CONTEXT — blue < 70%, yellow 70-89%, red 90%+ |
 
-Rows are hidden when the statusline JSON doesn't include `rate_limits` (free tier, or cold-start before the first turn).
+Rows are hidden when the statusline JSON doesn't include `rate_limits` (free tier, or cold-start before the first turn). Each bar can be toggled independently via the TUI ("PLAN BARS" section) or by editing `plan.5h` / `plan.7d` in `~/.claude/cortex-config.json`.
 
 ### USAGE
 | Field | Example | Meaning |
@@ -197,6 +197,15 @@ Cortex includes a `/cortex` command for Claude Code to manage sections on the fl
 
 `loc` · `env` · `context` · `plan` · `usage` · `disk` · `pwd` · `memory` · `activity`
 
+### Plan Sub-Toggles
+
+The PLAN section has two bars you can toggle independently. Edit `plan.5h` / `plan.7d` in `~/.claude/cortex-config.json` or use the interactive TUI.
+
+| Key | What it shows |
+|-----|---------------|
+| `5h` | 5-hour rolling rate-limit bar |
+| `7d` | 7-day rolling rate-limit bar |
+
 ### Activity Sub-Toggles
 
 The activity heatmap has four independent views you can toggle:
@@ -222,8 +231,9 @@ cortex-config
 
 Navigate with arrow keys, Space to toggle, Enter to save.
 
-The TUI has three sections:
+The TUI has four sections:
 - **Sections** — toggle main dashboard sections on/off
+- **Plan Bars** — independently toggle the 5h and 7d rate-limit bars
 - **Activity Views** — independently toggle 1d, 1w, 1mo, and year heatmap views
 - **Presets** — quick configs: full, minimal (context + pwd), compact (context + usage + pwd)
 
