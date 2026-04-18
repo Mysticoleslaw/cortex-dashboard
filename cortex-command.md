@@ -20,6 +20,7 @@ Manage the Cortex statusline dashboard sections and settings.
 | Location | `loc` | City, time, weather |
 | Environment | `env` | CC version, model, skills, hooks, cost |
 | Context | `context` | Context window progress bar |
+| Plan | `plan` | Claude plan usage — 5h + 7d rate-limit bars with reset countdown |
 | Usage | `usage` | Lines, duration, tokens, cache, burn rate |
 | Disk | `disk` | Local disk usage |
 | Working Dir | `pwd` | Directory, git branch, modified, sync |
@@ -62,6 +63,6 @@ osascript -e "tell application \"Terminal\" to do script \"python3 $HOME/.claude
 Then confirm: "Cortex config TUI opened in a new window."
 
 ### Validation:
-If the section key doesn't match one of: `loc`, `env`, `context`, `usage`, `disk`, `pwd`, `memory`, `activity` — tell the user the valid options.
+If the section key doesn't match one of: `loc`, `env`, `context`, `plan`, `usage`, `disk`, `pwd`, `memory`, `activity` — tell the user the valid options.
 
 Changes take effect on the next Claude Code interaction (statusline auto-refreshes).

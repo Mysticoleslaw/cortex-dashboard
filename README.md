@@ -13,6 +13,7 @@ Cortex transforms the Claude Code status bar into a full monitoring dashboard wi
 | **LOC** | Location, local time, weather (via wttr.in) |
 | **ENV** | Claude Code version, model, context window size, skills/hooks count, session cost |
 | **CONTEXT** | Color-coded progress bar — green < 70%, yellow 70-89%, red 90%+ |
+| **PLAN** | Claude plan usage — 5-hour and 7-day rate-limit bars with reset countdown (Pro/Max plans) |
 | **USAGE** | Lines changed, session duration, tokens (in/out), cache hit ratio, burn rate ($/min), >200K warning |
 | **DISK** | Local disk usage with color-coded warnings |
 | **PWD** | Working directory, git branch, session age, modified files, commits ahead |
@@ -120,6 +121,18 @@ Here's what every label and abbreviation means:
 | Percentage | `22%` | How full the context window is — green < 70%, yellow 70-89%, red 90%+ |
 | ● dot color | 🔵/🟡/🔴 | Blue = healthy, yellow = getting full, red = near limit |
 
+### PLAN
+Shows Claude plan (rate-limit) usage across all your sessions — the same data `/usage` displays. Two rows appear once the current session makes its first API call:
+
+| Field | Example | Meaning |
+|-------|---------|---------|
+| `PLAN 5h` bar | `━━━━━╌╌╌╌╌╌╌ 14%` | Rolling 5-hour usage window |
+| `PLAN 7d` bar | `━━━━━━━━━━╌╌╌ 41%` | Rolling 7-day usage window |
+| Reset countdown | `· resets in 1h 54m` | Human-readable time until that window resets |
+| ● dot color | 🔵/🟡/🔴 | Same thresholds as CONTEXT — blue < 70%, yellow 70-89%, red 90%+ |
+
+Rows are hidden when the statusline JSON doesn't include `rate_limits` (free tier, or cold-start before the first turn).
+
 ### USAGE
 | Field | Example | Meaning |
 |-------|---------|---------|
@@ -158,9 +171,9 @@ Here's what every label and abbreviation means:
 ### ACTIVITY
 | Row | What it shows |
 |-----|---------------|
-| **1d** | Today's 24 hours — each bar = 1 hour of activity |
-| **1w** | This week (Sun–Sat) — each bar = 1 day |
-| **1mo** | Last 30 days — compact sparkline |
+| **1d** | Today's 24 hours — each bar = 1 hour (full bar = 60 min of use) |
+| **1w** | This week (Sun–Sat) — each bar = 1 day (full bar = 24h of use) |
+| **1mo** | Last 30 days — compact sparkline (same 24h-per-day scale) |
 | **Year grid** | 52-week GitHub-style heatmap. Rows = days of week, columns = weeks |
 | **Month labels** | Single-letter month markers below the grid |
 | **Legend** | `Less ▪■■■■ More` — gray = no activity, bright green = heavy use |
@@ -182,7 +195,7 @@ Cortex includes a `/cortex` command for Claude Code to manage sections on the fl
 
 ### Available Section Keys
 
-`loc` · `env` · `context` · `usage` · `disk` · `pwd` · `memory` · `activity`
+`loc` · `env` · `context` · `plan` · `usage` · `disk` · `pwd` · `memory` · `activity`
 
 ### Activity Sub-Toggles
 
@@ -223,10 +236,13 @@ The dashboard is just bash and python — edit the scripts to add or remove sect
 | Metric | Green | Yellow | Red |
 |--------|-------|--------|-----|
 | Context | < 70% | 70-89% | 90%+ |
+| Plan (5h / 7d) | < 70% | 70-89% | 90%+ |
 | Cache hit | > 70% | 40-70% | < 40% |
 | Disk | < 75% | 75-89% | 90%+ |
 
 ### Heatmap Intensity
+
+Year-grid squares (heavier use = brighter green):
 
 | Level | Daily minutes |
 |-------|--------------|
@@ -235,6 +251,18 @@ The dashboard is just bash and python — edit the scripts to add or remove sect
 | Medium green | 31-90 |
 | Bright green | 91-180 |
 | Brightest | 180+ |
+
+Daily bar heights (1w, 1mo rows) scale to a 24-hour ceiling:
+
+| Bar glyph | Daily minutes |
+|-----------|---------------|
+| (empty)   | 0 |
+| ▁         | 1-30 |
+| ▂         | 31-180 (up to 3h) |
+| ▃         | 181-360 (up to 6h) |
+| ▅         | 361-720 (up to 12h) |
+| ▆         | 721-1080 (up to 18h) |
+| █         | 1081-1440 (up to 24h) |
 
 ## Inspired By
 
