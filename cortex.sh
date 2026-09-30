@@ -74,6 +74,7 @@ eval "$(echo "$input" | jq -r '
     "PS_PCT=\(sh(.rate_limits.spend_limit.used_percentage))",
     "PS_RESET=\(sh(.rate_limits.spend_limit.resets_at))",
     "PR_NUM=\(sh(.pr.number))",
+    "PR_URL=\(sh(.pr.url))",
     "PR_STATE=\(sh(.pr.review_state))",
     "PR_KIND=\(sh(.pr.kind))",
     "WORKTREE=\(sh(.worktree.name // .workspace.git_worktree))"
@@ -267,24 +268,30 @@ else
     CACHE_STR="${D}--${RESET}"
 fi
 
-# Cache warmth: time left before the cached prefix expires
+# Cache warmth: time left before the cached prefix expires (yellow in the
+# last 5 minutes — send the next prompt before the cache goes cold)
+CACHE_EXPIRY_WARN=300
 if [ "$PC_WARM" = "true" ] && [ -n "$PC_EXPIRES" ] && [ "$PC_EXPIRES" -gt "$NOW" ]; then
-    CACHE_STR="${CACHE_STR} ${D}warm $(fmt_countdown $((PC_EXPIRES - NOW)))${RESET}"
+    CACHE_LEFT=$((PC_EXPIRES - NOW))
+    WARM_COLOR="$D"; [ "$CACHE_LEFT" -le "$CACHE_EXPIRY_WARN" ] && WARM_COLOR="$Y"
+    CACHE_STR="${CACHE_STR} ${WARM_COLOR}warm $(fmt_countdown "$CACHE_LEFT")${RESET}"
 elif [ "$PC_OBSERVED" = "true" ]; then
     CACHE_STR="${CACHE_STR} ${R}cold${RESET}"
 fi
 
-# Burn rate (cost per minute)
-if [ "$MINS" -gt 0 ]; then
-    BURN=$(awk "BEGIN { printf \"%.3f\", $COST / $MINS }")
+# Burn rate: cost per minute Claude spent working (API time), so it doesn't
+# drift down while the session sits idle; wall-clock if API time is missing
+BURN_MINS=$(awk "BEGIN { m = $API_MS / 60000; if (m <= 0) m = $DURATION_MS / 60000; printf \"%.4f\", m }")
+if awk "BEGIN { exit !($BURN_MINS >= 1) }"; then
+    BURN=$(awk "BEGIN { printf \"%.3f\", $COST / $BURN_MINS }")
     BURN_STR="\$${BURN}/m"
 else
     BURN_STR="--"
 fi
 
-# Exceeds 200K warning
+# Exceeds 200K warning — only meaningful when the window itself is 200K
 WARN_200K=""
-[ "$EXCEEDS_200K" = "true" ] && WARN_200K=" ${R}⚠ >200K${RESET}"
+[ "$EXCEEDS_200K" = "true" ] && [ "$CTX_SIZE" -le 200000 ] && WARN_200K=" ${R}⚠ >200K${RESET}"
 
 # Format token counts (e.g. 152340 -> 152K)
 fmt_tokens() {
@@ -364,7 +371,12 @@ if [ -n "$PR_NUM" ]; then
         *)                 PR_COLOR="$Y"; PR_ICON="…" ;;
     esac
     PR_LABEL="PR"; [ "$PR_KIND" = "mr" ] && PR_LABEL="MR"
-    GIT_INFO="${GIT_INFO} ${D}|${RESET} ${PR_LABEL}: ${PR_COLOR}#${PR_NUM} ${PR_ICON}${RESET}"
+    PR_TEXT="#${PR_NUM} ${PR_ICON}"
+    # Clickable via OSC 8 (Cmd/Ctrl+click) in terminals that support it;
+    # strip control characters so the URL can't inject escape sequences
+    PR_URL="${PR_URL//[[:cntrl:]\\]/}"
+    [[ "$PR_URL" == https://* ]] && PR_TEXT="\033]8;;${PR_URL}\a${PR_TEXT}\033]8;;\a"
+    GIT_INFO="${GIT_INFO} ${D}|${RESET} ${PR_LABEL}: ${PR_COLOR}${PR_TEXT}${RESET}"
 fi
 
 printf '%b' "${C}◆${RESET} ${C}PWD:${RESET} ${W}${DIRNAME}${RESET} ${GIT_INFO}\n"

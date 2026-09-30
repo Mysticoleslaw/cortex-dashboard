@@ -1,0 +1,23 @@
+name: tests
+
+on:
+  push:
+    branches: [Main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: |
+          bash -n cortex.sh install.sh uninstall.sh tests/run.sh
+          python3 -m py_compile usage-heatmap.py cortex-config-tui.py
+          jq empty cortex-config.default.json
+      - name: Run tests
+        run: ./tests/run.sh
