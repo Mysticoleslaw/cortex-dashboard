@@ -12,6 +12,10 @@ Manage the Cortex statusline dashboard sections and settings.
 - `/cortex reset` — reset all sections to enabled
 - `/cortex minimal` — only show context + pwd
 - `/cortex full` — enable all sections
+- `/cortex update` — install the latest Cortex release
+- `/cortex rollback` — go back to the previous release
+- `/cortex use <version>` — install a specific release (e.g. `v1.2.0`)
+- `/cortex version` — show installed version and available releases
 
 ## Available Sections
 
@@ -26,6 +30,7 @@ Manage the Cortex statusline dashboard sections and settings.
 | Working Dir | `pwd` | Directory, git branch, modified, sync, worktree, PR |
 | Memory | `memory` | Memory file counts by type |
 | Activity | `activity` | Heatmap: 1d, 1w, 1mo, 52-week grid |
+| Updates | `updates` | Header notice when a newer release exists (checks GitHub once a day) |
 
 ## Instructions
 
@@ -62,7 +67,17 @@ osascript -e "tell application \"Terminal\" to do script \"python3 $HOME/.claude
 ```
 Then confirm: "Cortex config TUI opened in a new window."
 
+### When the user runs `/cortex update`, `/cortex rollback`, `/cortex use <version>`, or `/cortex version`:
+Run the matching command with Bash and show its output:
+```bash
+bash ~/.claude/cortex-cli.sh update          # or: rollback, use <version>, version, versions
+```
+If the file doesn't exist, the installed Cortex predates the updater. Tell the user to reinstall with:
+`curl -fsSL https://raw.githubusercontent.com/Mysticoleslaw/cortex-dashboard/Main/get.sh | bash`
+
+For `/cortex version`, also run `bash ~/.claude/cortex-cli.sh versions` so the user sees what they can switch to.
+
 ### Validation:
-If the section key doesn't match one of: `loc`, `env`, `context`, `plan`, `usage`, `disk`, `pwd`, `memory`, `activity` — tell the user the valid options.
+If the section key doesn't match one of: `loc`, `env`, `context`, `plan`, `usage`, `disk`, `pwd`, `memory`, `activity`, `updates` — tell the user the valid options.
 
 Changes take effect on the next Claude Code interaction (statusline auto-refreshes).

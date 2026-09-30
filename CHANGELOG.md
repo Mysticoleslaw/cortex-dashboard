@@ -5,7 +5,10 @@ All notable changes to Cortex are documented here. The format follows [Keep a Ch
 ## [1.3.0] — 2026-09-30
 
 ### Added
-- **One-line install:** `curl -fsSL https://raw.githubusercontent.com/Mysticoleslaw/cortex-dashboard/Main/get.sh | bash`. It downloads into `~/.cortex-dashboard` (with git, or a tarball if git is missing) and runs `install.sh`. Re-run it to update. `CORTEX_REF` pins a branch or tag.
+- **One-line install:** `curl -fsSL https://raw.githubusercontent.com/Mysticoleslaw/cortex-dashboard/Main/get.sh | bash`. It installs the latest release into `~/.cortex-dashboard` (with git, or a tarball if git is missing) and runs `install.sh`. `CORTEX_REF` pins a version, branch, or tag.
+- **Update notice:** the header shows `⬆ vX.Y.Z available · cortex update` when a newer release exists. It checks GitHub once a day in the background; toggle with the new `updates` section.
+- **`cortex` command:** `update`, `rollback`, `use <version>`, `version`, `versions`. Also available as `/cortex update`, `/cortex rollback`, etc.
+- `VERSION` file; the installed version is recorded in `~/.claude/cortex-version`.
 - `CORTEX_BIN_DIR` sets where the `cortex-config` shortcut goes (default `/usr/local/bin`).
 
 ### Fixed

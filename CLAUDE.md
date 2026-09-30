@@ -8,7 +8,8 @@ A multi-line statusline dashboard for the Claude Code CLI. Claude Code pipes ses
 - `usage-heatmap.py`: the ACTIVITY section renderer (python3, stdlib only).
 - `cortex-config-tui.py`: curses config screen (`cortex-config`). Its lists (`SECTIONS`, `PLAN_SUBS`, `ACTIVITY_SUBS`) drive the UI generically.
 - `cortex-command.md`: the `/cortex` slash command, installed to `~/.claude/commands/cortex.md`.
-- `get.sh`: the `curl … | bash` one-liner. Clones/updates `~/.cortex-dashboard` and runs `install.sh`. Keep its body inside `main()` so a truncated download never runs a partial script.
+- `get.sh`: the `curl … | bash` one-liner. Installs the latest release tag (or `CORTEX_REF`) into `~/.cortex-dashboard` and runs `install.sh`. Keep its body inside `main()` so a truncated download never runs a partial script.
+- `cortex-cli.sh`: the `cortex` command (update / rollback / use / version / versions), installed to `~/.claude/cortex-cli.sh`. Versions come from `git ls-remote` tags `vX.Y.Z`. Wrapped in `main(); exit` because `install.sh` replaces it mid-run.
 - `install.sh` / `uninstall.sh`: copy files into `~/.claude` and set/remove `statusLine` in `settings.json` (with `refreshInterval: 30`).
 
 ## Architecture
@@ -20,6 +21,14 @@ A multi-line statusline dashboard for the Claude Code CLI. Claude Code pipes ses
   - `usage-history.tsv`: one row per session (duration, cost), upserted under a `mkdir` lock with a `mktemp` file. Concurrent renders are normal, so never rewrite it without the lock.
   - `activity-minutes.log`: one `YYYY-MM-DD HH:MM` line per minute in which any session did work (cost or API time changed, tracked in `$CACHE_DIR/claude-statusline-sess-<id>`). The heatmap uses it (gap-fills ≤5 min) and falls back to capped `usage-history.tsv` data for days before it existed.
 - Statusline field reference: https://code.claude.com/docs/en/statusline. Fields can be absent: render nothing rather than a fake 0.
+
+## Releasing
+
+Users only get what's released. `get.sh`, `cortex update`, and the header notice all follow the latest `vX.Y.Z` tag, not `Main`.
+
+1. Bump `VERSION` (e.g. `v1.4.0`) and add a `CHANGELOG.md` section in the same PR.
+2. After merging, publish a GitHub Release tagged exactly `VERSION` on the merge commit, with that changelog section as the notes.
+3. Never delete or move a published tag: `cortex rollback` depends on them.
 
 ## Commands
 

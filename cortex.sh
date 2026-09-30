@@ -166,7 +166,29 @@ pct_colors() {
 # ── Header ──
 HEADER_NAME=""
 [ -n "$SESSION_NAME" ] && HEADER_NAME=" ${D}·${RESET} ${C}${SESSION_NAME}${RESET}"
-printf '%b' "${D}──${RESET} ${C}${W}CORTEX${RESET} ${D}·${RESET} ${D}by Claude${RESET}${HEADER_NAME} ${D}──────────────────────────────────────${RESET}\n"
+
+# Update notice: ask GitHub for the latest release at most once a day, in the
+# background (never blocks a render), and flag it when it's newer than installed
+UPDATE_STR=""
+if section_enabled updates; then
+    UPDATE_CACHE="$CACHE_DIR/claude-statusline-update"
+    RELEASES_API="https://api.github.com/repos/Mysticoleslaw/cortex-dashboard/releases/latest"
+    if cache_stale "$UPDATE_CACHE" 86400; then
+        : > "$UPDATE_CACHE"  # claim today's check so parallel renders don't all fetch
+        (
+            latest=$(curl -fsS --max-time 3 "$RELEASES_API" | jq -r '.tag_name // empty')
+            [[ "$latest" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && echo "$latest" > "$UPDATE_CACHE"
+        ) > /dev/null 2>&1 &
+    fi
+    INSTALLED=$(cat "$HOME/.claude/cortex-version" 2>/dev/null)
+    LATEST=$(cat "$UPDATE_CACHE" 2>/dev/null)
+    if [[ "$INSTALLED" =~ ^v[0-9] && "$LATEST" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ && "$LATEST" != "$INSTALLED" ]] \
+        && [ "$(printf '%s\n%s\n' "$INSTALLED" "$LATEST" | sort -V | tail -n 1)" = "$LATEST" ]; then
+        UPDATE_STR=" ${Y}⬆ ${LATEST} available · cortex update${RESET}"
+    fi
+fi
+
+printf '%b' "${D}──${RESET} ${C}${W}CORTEX${RESET} ${D}·${RESET} ${D}by Claude${RESET}${HEADER_NAME} ${D}──────────────────────────────────────${RESET}${UPDATE_STR}\n"
 
 # ── LOC: Location + Time + Weather ──
 if section_enabled loc; then

@@ -11,11 +11,16 @@ rm -f "$CLAUDE_DIR/statusline-command.sh"
 rm -f "$CLAUDE_DIR/usage-heatmap.py"
 rm -f "$CLAUDE_DIR/cortex-config-tui.py"
 rm -f "$CLAUDE_DIR/commands/cortex.md"
+rm -f "$CLAUDE_DIR/cortex-cli.sh"
+rm -f "$CLAUDE_DIR/cortex-version"
 
 # Remove the cortex-config shortcut, but only if it points at Cortex
 BIN_DIR="${CORTEX_BIN_DIR:-/usr/local/bin}"
 if [ "$(readlink "$BIN_DIR/cortex-config" 2>/dev/null)" = "$CLAUDE_DIR/cortex-config-tui.py" ]; then
     rm -f "$BIN_DIR/cortex-config"
+fi
+if [ "$(readlink "$BIN_DIR/cortex" 2>/dev/null)" = "$CLAUDE_DIR/cortex-cli.sh" ]; then
+    rm -f "$BIN_DIR/cortex"
 fi
 
 # Remove statusLine (command + refreshInterval) from settings
