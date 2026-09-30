@@ -2,6 +2,8 @@
 
 **A feature-rich statusline dashboard for Claude Code.**
 
+[![tests](https://github.com/Mysticoleslaw/cortex-dashboard/actions/workflows/test.yml/badge.svg)](https://github.com/Mysticoleslaw/cortex-dashboard/actions/workflows/test.yml)
+
 Cortex transforms the Claude Code status bar into a full monitoring dashboard with real-time session metrics, weather, git status, memory tracking, and a GitHub-style activity heatmap.
 
 ![Cortex Dashboard](screenshots/cortex-preview.png)
@@ -103,7 +105,7 @@ Caches live in `/tmp/claude-statusline-*` (override with `CORTEX_CACHE_DIR`).
 ./tests/run.sh
 ```
 
-Renders the dashboard against fixture payloads in a throwaway HOME and cache directory, so it never touches your real `~/.claude`. It covers every section, config toggles, concurrent history writes, active-minute logging, and heatmap math.
+Renders the dashboard against fixture payloads in a throwaway HOME and cache directory, so it never touches your real `~/.claude`. CI runs it on Linux and macOS for every push and pull request. It covers every section, config toggles, concurrent history writes, active-minute logging, and heatmap math.
 
 ## Uninstall
 
@@ -167,9 +169,9 @@ Each row is hidden when its window is missing from the statusline JSON (free tie
 | Tk ↓ | `↓155K` | Input tokens in the context window as of the latest API response (includes cache reads/writes) |
 | Tk ↑ | `↑1K` | Output tokens from the latest API response |
 | Cache | `91%` | Session-wide prompt cache hit ratio — higher = cheaper. Green > 70%, yellow 40-70%, red < 40% |
-| warm / cold | `warm 42m` | Time until the cached prefix expires; `cold` means the next turn re-writes the cache |
-| Burn | `$0.090/m` | Cost per minute — your current spend rate |
-| ⚠ >200K | warning | Appears when last API call exceeded 200K tokens (context getting large) |
+| warm / cold | `warm 42m` | Time until the cached prefix expires. Turns yellow in the last 5 minutes, so you can send the next prompt before it goes `cold` (next turn re-writes the cache) |
+| Burn | `$2.140/m` | Cost per minute of Claude working (API time), so it doesn't drift down while the session sits idle. Falls back to wall-clock time if API time isn't reported |
+| ⚠ >200K | warning | Last API response exceeded 200K tokens. Shown only on 200K-window models; on 1M windows the CONTEXT bar already covers it |
 
 ### DISK
 | Field | Example | Meaning |
@@ -186,7 +188,7 @@ Each row is hidden when its window is missing from the statusline JSON (free tie
 | Mod | `0` | Number of modified/untracked files in git |
 | Sync | `↑4` | Commits ahead of remote (only shown if > 0) |
 | WT | `my-feature` | Worktree name, when inside a git worktree or a Claude Code worktree session |
-| PR / MR | `#123 ✓` | Open pull request (or GitLab merge request) for the branch. ✓ approved · … pending · ✗ changes requested · ◌ draft |
+| PR / MR | `#123 ✓` | Open pull request (or GitLab merge request) for the branch. ✓ approved · … pending · ✗ changes requested · ◌ draft. Cmd/Ctrl+click opens it in terminals with hyperlink support (iTerm2, Kitty, WezTerm; not Terminal.app) |
 
 ### MEMORY
 | Field | Example | Meaning |

@@ -20,7 +20,9 @@ ok()   { PASS=$((PASS + 1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
 bad()  { FAIL=$((FAIL + 1)); printf '  \033[31m✗\033[0m %s\n' "$1"; }
 check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
 has()   { grep -qF -- "$2" <<< "$1"; }
-render() { bash "$REPO/cortex.sh" | sed $'s/\x1b\\[[0-9;]*m//g'; }
+# Plain text: strip color codes and OSC 8 link wrappers
+render() { bash "$REPO/cortex.sh" | sed -e $'s/\x1b\\[[0-9;]*m//g' -e $'s/\x1b]8;;[^\x07]*\x07//g'; }
+render_raw() { bash "$REPO/cortex.sh"; }
 settle() { sleep 0.5; }  # background loggers
 
 # LOC fetches weather over the network — keep tests offline
@@ -55,12 +57,13 @@ full_payload() {
  "workspace":{"current_dir":"$REPO_FIX","git_worktree":"wt-1"},
  "cost":{"total_cost_usd":3.21,"total_duration_ms":1830000,"total_api_duration_ms":90000,"total_lines_added":5,"total_lines_removed":2},
  "context_window":{"total_input_tokens":155000,"total_output_tokens":1200,"context_window_size":1000000,"used_percentage":15.5},
- "prompt_cache":{"warm":true,"caching_observed":true,"expires_at":$((NOW + 2520)),"hit_ratio":0.91},
+ "prompt_cache":{"warm":true,"caching_observed":true,"expires_at":$((NOW + 2550)),"hit_ratio":0.91},
  "fast_mode":true,"effort":{"level":"xhigh"},
- "rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":$((NOW + 6840))},
+ "rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":$((NOW + 6870))},
                 "seven_day":{"used_percentage":91.2,"resets_at":$((NOW + 300000))},
                 "spend_limit":{"used_percentage":112.8,"resets_at":$((NOW + 900000))}},
- "pr":{"number":7,"review_state":"approved"}}
+ "exceeds_200k_tokens":true,
+ "pr":{"number":7,"url":"https://github.com/o/r/pull/7","review_state":"approved"}}
 EOF
 }
 
@@ -83,6 +86,28 @@ OUT=$(echo '{"session_id":"s-min","workspace":{"current_dir":"'"$NOGIT"'"},"rate
 check "missing PLAN windows are hidden"    'has "$OUT" "PLAN 5h:" && ! has "$OUT" "PLAN 7d:" && ! has "$OUT" "SPEND:"'
 check "git cache is per directory"         '! has "$OUT" "Branch:"'
 check "no effort/fast when absent"         '! has "$OUT" "⚡fast"'
+
+echo "── Usage details"
+OUT=$(full_payload | render)
+check "burn rate uses API time (\$3.21 / 1.5 min)" 'has "$OUT" "Burn: \$2.140/m"'
+check ">200K warning hidden on 1M windows" '! has "$OUT" ">200K"'
+OUT=$(echo '{"exceeds_200k_tokens":true,"context_window":{"context_window_size":200000},"workspace":{"current_dir":"'"$NOGIT"'"}}' | render)
+check ">200K warning shown on 200K windows" 'has "$OUT" "⚠ >200K"'
+OUT=$(echo '{"cost":{"total_cost_usd":1,"total_duration_ms":600000},"workspace":{"current_dir":"'"$NOGIT"'"}}' | render)
+check "burn rate falls back to wall-clock"  'has "$OUT" "Burn: \$0.100/m"'
+RAW=$(full_payload | render_raw)
+check "cache countdown dim when >5 min left" 'has "$RAW" $'"'"'\033[90mwarm 42m'"'"
+RAW=$(echo '{"prompt_cache":{"warm":true,"caching_observed":true,"expires_at":'$((NOW + 150))',"hit_ratio":0.9},"workspace":{"current_dir":"'"$NOGIT"'"}}' | render_raw)
+check "cache countdown yellow in last 5 min" 'has "$RAW" $'"'"'\033[33mwarm 2m'"'"
+
+echo "── PR link"
+RAW=$(full_payload | render_raw)
+check "PR badge is an OSC 8 link"          'has "$RAW" $'"'"'\033]8;;https://github.com/o/r/pull/7\a#7'"'"
+EVIL=$(jq -n --arg d "$REPO_FIX" '{"workspace":{"current_dir":$d},"pr":{"number":9,"url":"https://x.test/\u001b[31mEVIL\u0007"}}')
+RAW=$(echo "$EVIL" | render_raw)
+check "control chars stripped from PR URL" '! has "$RAW" $'"'"'\033[31mEVIL'"'"' && has "$RAW" "#9"'
+RAW=$(echo '{"workspace":{"current_dir":"'"$REPO_FIX"'"},"pr":{"number":5,"url":"javascript:alert(1)"}}' | render_raw)
+check "non-https PR URL isn't linked"      '! has "$RAW" "javascript:" && has "$RAW" "#5"'
 
 OUT=$(echo '{}' | bash "$REPO/cortex.sh" > /dev/null 2>&1; echo "exit=$?")
 check "empty payload renders without error" 'has "$OUT" "exit=0"'
