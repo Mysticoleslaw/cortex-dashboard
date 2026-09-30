@@ -16,6 +16,12 @@ die() { echo "cortex: $*" >&2; exit 1; }
 
 installed_version() { cat "$VERSION_FILE" 2>/dev/null || echo "unknown"; }
 
+# True when release tag $1 is newer than $2 (both vX.Y.Z)
+is_newer() {
+    [[ "$1" =~ ^v[0-9] && "$2" =~ ^v[0-9] && "$1" != "$2" ]] \
+        && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]
+}
+
 # Release tags (vX.Y.Z), oldest → newest
 list_versions() {
     if command -v git > /dev/null 2>&1; then
@@ -54,8 +60,7 @@ cmd_update() {
     current=$(installed_version)
     if [ "$current" = "$latest" ]; then
         echo "Cortex is up to date ($current)."
-    elif [[ "$current" =~ ^v[0-9] ]] \
-        && [ "$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n 1)" = "$current" ]; then
+    elif is_newer "$current" "$latest"; then
         # Never downgrade on "update" — that's what rollback / use are for
         echo "Cortex $current is newer than the latest release ($latest); nothing to update."
     else
@@ -89,6 +94,7 @@ cmd_version() {
     echo "Installed: $current"
     if [ -z "$latest" ]; then echo "Latest:    (couldn't check)"
     elif [ "$current" = "$latest" ]; then echo "Latest:    $latest — up to date"
+    elif is_newer "$current" "$latest"; then echo "Latest:    $latest — you're ahead of the latest release"
     else echo "Latest:    $latest — run 'cortex update'"; fi
 }
 

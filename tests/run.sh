@@ -216,6 +216,8 @@ OUT=$(cli update)
 check "cortex update installs the latest"   '[ "$(installed)" = v1.3.0 ] && [ "$(src_version)" = v1.3.0 ]'
 echo v1.9.0 > "$H2/.claude/cortex-version"; OUT=$(cli update)
 check "cortex update never downgrades"      'has "$OUT" "newer than the latest release" && [ "$(installed)" = v1.9.0 ]'
+OUT=$(cli version)
+check "cortex version doesn't suggest a downgrade" 'has "$OUT" "ahead of the latest release" && ! has "$OUT" "run '"'"'cortex update'"'"'"'
 OUT=$(cli use 1.2.9)
 check "cortex use <version> (v optional)"   '[ "$(installed)" = v1.2.9 ]'
 OUT=$(cli use v9.9.9); RC=$?
