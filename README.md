@@ -11,13 +11,13 @@ Cortex transforms the Claude Code status bar into a full monitoring dashboard wi
 | Section | What it shows |
 |---------|--------------|
 | **LOC** | Location, local time, weather (via wttr.in) |
-| **ENV** | Claude Code version, model, context window size, skills/hooks count, session cost |
+| **ENV** | Claude Code version, model, context window size, effort level, fast mode, skills/hooks count, session cost |
 | **CONTEXT** | Color-coded progress bar — green < 70%, yellow 70-89%, red 90%+ |
-| **PLAN** | Claude plan usage — 5-hour and 7-day rate-limit bars with reset countdown (Pro/Max plans) |
-| **USAGE** | Lines changed, session duration, tokens (in/out), cache hit ratio, burn rate ($/min), >200K warning |
+| **PLAN** | Claude plan usage — 5-hour and 7-day rate-limit bars with reset countdown (Pro/Max plans), plus spend limit behind a Claude apps gateway |
+| **USAGE** | Lines changed, session duration, tokens in context, prompt cache hit ratio + warm/cold, burn rate ($/min), >200K warning |
 | **DISK** | Local disk usage with color-coded warnings |
-| **PWD** | Working directory, git branch, session age, modified files, commits ahead |
-| **MEMORY** | Claude memory file counts by type (user, feedback, project, reference) |
+| **PWD** | Working directory, git branch, session age, modified files, commits ahead, worktree, open PR/MR + review state |
+| **MEMORY** | Claude memory file counts by frontmatter type (user, feedback, project, reference) |
 | **ACTIVITY** | GitHub-style heatmap — 24h hourly, weekly, 30-day sparkline, 52-week contribution grid |
 
 ## Quick Start
@@ -53,6 +53,8 @@ Then start a new Claude Code session. Cortex appears at the bottom of your termi
 
 Claude Code pipes JSON session data to your statusline script on every update. Cortex reads this data and renders a multi-line dashboard with ANSI colors.
 
+The installer also sets `statusLine.refreshInterval` to 30 seconds (unless you've already set one), so the clock and reset countdowns stay current while a session is idle. All JSON fields are read in a single `jq` pass, so a render takes about 0.1s.
+
 The activity heatmap maintains a lightweight usage log (`~/.claude/usage-history.tsv`) that records session duration and cost per day. This builds up over time into the 52-week contribution grid.
 
 ### Data Flow
@@ -71,7 +73,7 @@ Cortex caches expensive operations to stay fast:
 |-------|-----|------|
 | Weather | 30 min | wttr.in API response |
 | Disk | 1 min | `df` output |
-| Git | 5 sec | branch, status, ahead count |
+| Git | 5 sec | branch, status, ahead count (cached per directory, so parallel sessions don't mix) |
 | Heatmap | 30 sec | rendered activity grid |
 
 ## Files
@@ -104,13 +106,18 @@ Here's what every label and abbreviation means:
 | Time | `00:18` | Local time (24h format) |
 | Temp + condition | `+0°C Partly cloudy` | Current weather from [wttr.in](https://wttr.in) |
 
+### Header
+The top rule shows the session name (from `--name`, `/rename`, or the AI-generated title) when one exists.
+
 ### ENV (Environment)
 | Field | Example | Meaning |
 |-------|---------|---------|
 | CC | `2.1.80` | Claude Code CLI version |
 | Model name | `Opus 4.6 (1M context)` | Active Claude model |
 | (1M) / (200K) | `(1M)` | Context window size — 1M = 1 million tokens, 200K = 200,000 |
-| SK | `102` | Number of skills + agents installed in `~/.claude/skills/` and `~/.claude/agents/` |
+| Effort | `xhigh` | Current reasoning effort (`low` → `max`). Hidden when the model doesn't support effort |
+| ⚡fast | `⚡fast` | Shown when fast mode is on |
+| SK | `53` | Number of skills (`~/.claude/skills/*/SKILL.md`) + agents (`~/.claude/agents/*.md`) installed |
 | Hooks | `7` | Number of hooks configured in `settings.json` (PreToolUse, PostToolUse, Stop) |
 | $ amount | `$12.82` | Total API cost for the current session |
 
@@ -128,19 +135,21 @@ Shows Claude plan (rate-limit) usage across all your sessions — the same data 
 |-------|---------|---------|
 | `PLAN 5h` bar | `━━━━━╌╌╌╌╌╌╌ 14%` | Rolling 5-hour usage window |
 | `PLAN 7d` bar | `━━━━━━━━━━╌╌╌ 41%` | Rolling 7-day usage window |
+| `SPEND` bar | `━━━━━━╌╌╌╌╌╌╌ 62%` | Spend limit behind a [Claude apps gateway](https://code.claude.com/docs/en/claude-apps-gateway-spend-limits). Can exceed 100% |
 | Reset countdown | `· resets in 1h 54m` | Human-readable time until that window resets |
 | ● dot color | 🔵/🟡/🔴 | Same thresholds as CONTEXT — blue < 70%, yellow 70-89%, red 90%+ |
 
-Rows are hidden when the statusline JSON doesn't include `rate_limits` (free tier, or cold-start before the first turn). Each bar can be toggled independently via the TUI ("PLAN BARS" section) or by editing `plan.5h` / `plan.7d` in `~/.claude/cortex-config.json`.
+Each row is hidden when its window is missing from the statusline JSON (free tier, cold start before the first turn, or no gateway for SPEND). Each bar can be toggled independently via the TUI ("PLAN BARS" section) or by editing `plan.5h` / `plan.7d` / `plan.spend` in `~/.claude/cortex-config.json`.
 
 ### USAGE
 | Field | Example | Meaning |
 |-------|---------|---------|
 | +N / -N lines | `+1027 -318` | Lines of code added/removed this session |
 | ⏱ time | `142m 34s` | Total wall-clock time since session started |
-| Tk ↓ | `↓6K` | Total input tokens consumed (cumulative across session) |
-| Tk ↑ | `↑50K` | Total output tokens generated (cumulative across session) |
-| Cache | `99%` | Prompt cache hit ratio — higher = cheaper. Green > 70%, yellow 40-70%, red < 40% |
+| Tk ↓ | `↓155K` | Input tokens in the context window as of the latest API response (includes cache reads/writes) |
+| Tk ↑ | `↑1K` | Output tokens from the latest API response |
+| Cache | `91%` | Session-wide prompt cache hit ratio — higher = cheaper. Green > 70%, yellow 40-70%, red < 40% |
+| warm / cold | `warm 42m` | Time until the cached prefix expires; `cold` means the next turn re-writes the cache |
 | Burn | `$0.090/m` | Cost per minute — your current spend rate |
 | ⚠ >200K | warning | Appears when last API call exceeded 200K tokens (context getting large) |
 
@@ -158,11 +167,13 @@ Rows are hidden when the statusline JSON doesn't include `rate_limits` (free tie
 | Age | `142m` | Session duration (same as ⏱ in USAGE) |
 | Mod | `0` | Number of modified/untracked files in git |
 | Sync | `↑4` | Commits ahead of remote (only shown if > 0) |
+| WT | `my-feature` | Worktree name, when inside a git worktree or a Claude Code worktree session |
+| PR / MR | `#123 ✓` | Open pull request (or GitLab merge request) for the branch. ✓ approved · … pending · ✗ changes requested · ◌ draft |
 
 ### MEMORY
 | Field | Example | Meaning |
 |-------|---------|---------|
-| 📂 Total | `11` | Total memory files across all projects |
+| 📂 Total | `110` | Total memory files across all projects (classified by the `type:` in each file's frontmatter, falling back to a `<type>_*.md` filename prefix) |
 | ♦ User | `2` | User profile memories (role, preferences) |
 | ♦ Feedback | `2` | Behavioral guidance memories (do this, don't do that) |
 | ♦ Project | `5` | Project context memories (goals, decisions, status) |
@@ -199,12 +210,13 @@ Cortex includes a `/cortex` command for Claude Code to manage sections on the fl
 
 ### Plan Sub-Toggles
 
-The PLAN section has two bars you can toggle independently. Edit `plan.5h` / `plan.7d` in `~/.claude/cortex-config.json` or use the interactive TUI.
+The PLAN section has three bars you can toggle independently. Edit `plan.5h` / `plan.7d` / `plan.spend` in `~/.claude/cortex-config.json` or use the interactive TUI.
 
 | Key | What it shows |
 |-----|---------------|
 | `5h` | 5-hour rolling rate-limit bar |
 | `7d` | 7-day rolling rate-limit bar |
+| `spend` | Gateway spend-limit bar |
 
 ### Activity Sub-Toggles
 
@@ -233,7 +245,7 @@ Navigate with arrow keys, Space to toggle, Enter to save.
 
 The TUI has four sections:
 - **Sections** — toggle main dashboard sections on/off
-- **Plan Bars** — independently toggle the 5h and 7d rate-limit bars
+- **Plan Bars** — independently toggle the 5h, 7d, and spend-limit bars
 - **Activity Views** — independently toggle 1d, 1w, 1mo, and year heatmap views
 - **Presets** — quick configs: full, minimal (context + pwd), compact (context + usage + pwd)
 
@@ -246,7 +258,7 @@ The dashboard is just bash and python — edit the scripts to add or remove sect
 | Metric | Green | Yellow | Red |
 |--------|-------|--------|-----|
 | Context | < 70% | 70-89% | 90%+ |
-| Plan (5h / 7d) | < 70% | 70-89% | 90%+ |
+| Plan (5h / 7d / spend) | < 70% | 70-89% | 90%+ |
 | Cache hit | > 70% | 40-70% | < 40% |
 | Disk | < 75% | 75-89% | 90%+ |
 

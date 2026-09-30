@@ -18,12 +18,12 @@ Manage the Cortex statusline dashboard sections and settings.
 | Section | Key | What it shows |
 |---------|-----|---------------|
 | Location | `loc` | City, time, weather |
-| Environment | `env` | CC version, model, skills, hooks, cost |
+| Environment | `env` | CC version, model, effort, fast mode, skills, hooks, cost |
 | Context | `context` | Context window progress bar |
-| Plan | `plan` | Claude plan usage — 5h + 7d rate-limit bars with reset countdown |
+| Plan | `plan` | Claude plan usage — 5h + 7d rate-limit bars with reset countdown, plus gateway spend limit |
 | Usage | `usage` | Lines, duration, tokens, cache, burn rate |
 | Disk | `disk` | Local disk usage |
-| Working Dir | `pwd` | Directory, git branch, modified, sync |
+| Working Dir | `pwd` | Directory, git branch, modified, sync, worktree, PR |
 | Memory | `memory` | Memory file counts by type |
 | Activity | `activity` | Heatmap: 1d, 1w, 1mo, 52-week grid |
 

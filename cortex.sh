@@ -3,6 +3,7 @@
 # https://github.com/Mysticoleslaw/cortex-dashboard
 
 input=$(cat)
+NOW=$(date +%s)
 
 # ── Config ──
 CORTEX_CONFIG="$HOME/.claude/cortex-config.json"
@@ -26,6 +27,18 @@ subsection_enabled() {
     fi
 }
 
+# ── Cache helpers ──
+# File modification time (BSD stat on macOS, GNU stat on Linux)
+if [ "$(uname)" = "Darwin" ]; then
+    file_mtime() { stat -f %m "$1" 2>/dev/null || echo 0; }
+else
+    file_mtime() { stat -c %Y "$1" 2>/dev/null || echo 0; }
+fi
+cache_stale() {
+    local file="$1" max_age="$2"
+    [ ! -e "$file" ] || [ $((NOW - $(file_mtime "$file"))) -gt "$max_age" ]
+}
+
 # ── Colors ──
 C='\033[36m'      # cyan
 G='\033[32m'      # green
@@ -37,58 +50,122 @@ M='\033[35m'      # magenta
 B='\033[34m'      # blue
 RESET='\033[0m'
 
+# ── Extract data (single jq pass) ──
+eval "$(echo "$input" | jq -r '
+    def sh(v): (v // "" | tostring | @sh);
+    "MODEL=\(sh(.model.display_name // "?"))",
+    "VERSION=\(sh(.version // "?"))",
+    "DIR=\(sh(.workspace.current_dir // .cwd // "."))",
+    "SESSION_ID=\(sh(.session_id))",
+    "SESSION_NAME=\(sh(.session_name))",
+    "COST=\(sh(.cost.total_cost_usd // 0))",
+    "DURATION_MS=\(sh(.cost.total_duration_ms // 0 | floor))",
+    "LINES_ADD=\(sh(.cost.total_lines_added // 0))",
+    "LINES_DEL=\(sh(.cost.total_lines_removed // 0))",
+    "PCT=\(sh(.context_window.used_percentage // 0 | floor))",
+    "CTX_SIZE=\(sh(.context_window.context_window_size // 200000))",
+    "CACHE_READ=\(sh(.context_window.current_usage.cache_read_input_tokens // 0))",
+    "CACHE_CREATE=\(sh(.context_window.current_usage.cache_creation_input_tokens // 0))",
+    "INPUT_TOKENS=\(sh(.context_window.current_usage.input_tokens // 0))",
+    "TOTAL_IN=\(sh(.context_window.total_input_tokens // 0))",
+    "TOTAL_OUT=\(sh(.context_window.total_output_tokens // 0))",
+    "EXCEEDS_200K=\(sh(.exceeds_200k_tokens // false))",
+    "EFFORT=\(sh(.effort.level))",
+    "FAST_MODE=\(sh(.fast_mode // false))",
+    "PC_HIT=\(sh(if .prompt_cache.hit_ratio != null then (.prompt_cache.hit_ratio * 100 | floor) else null end))",
+    "PC_OBSERVED=\(sh(.prompt_cache.caching_observed // false))",
+    "PC_WARM=\(sh(.prompt_cache.warm // false))",
+    "PC_EXPIRES=\(sh(.prompt_cache.expires_at))",
+    "P5_PCT=\(sh(.rate_limits.five_hour.used_percentage))",
+    "P5_RESET=\(sh(.rate_limits.five_hour.resets_at))",
+    "P7_PCT=\(sh(.rate_limits.seven_day.used_percentage))",
+    "P7_RESET=\(sh(.rate_limits.seven_day.resets_at))",
+    "PS_PCT=\(sh(.rate_limits.spend_limit.used_percentage))",
+    "PS_RESET=\(sh(.rate_limits.spend_limit.resets_at))",
+    "PR_NUM=\(sh(.pr.number))",
+    "PR_STATE=\(sh(.pr.review_state))",
+    "PR_KIND=\(sh(.pr.kind))",
+    "WORKTREE=\(sh(.worktree.name // .workspace.git_worktree))"
+' 2>/dev/null)"
+
 # ── Usage history logging ──
 HISTORY_FILE="$HOME/.claude/usage-history.tsv"
+HISTORY_LOCK="${HISTORY_FILE}.lock"
 log_usage() {
-    local sid=$(echo "$1" | jq -r '.session_id // "unknown"')
-    local dur_ms=$(echo "$1" | jq -r '.cost.total_duration_ms // 0')
-    local cost=$(echo "$1" | jq -r '.cost.total_cost_usd // 0')
+    local sid="$1" dur_ms="$2" cost="$3"
+    [ -n "$sid" ] || return 0
     local dur_min=$(awk "BEGIN { printf \"%.1f\", $dur_ms / 60000 }")
-    local today=$(date +%Y-%m-%d)
-    local hour=$(date +%H)
 
-    # Create file with header if needed
-    [ -f "$HISTORY_FILE" ] || echo "# date	hour	session_id	duration_min	cost" > "$HISTORY_FILE"
-
-    # Upsert: remove old entry for this session, append new one
-    if grep -q "$sid" "$HISTORY_FILE" 2>/dev/null; then
-        grep -v "$sid" "$HISTORY_FILE" > "${HISTORY_FILE}.tmp" && mv "${HISTORY_FILE}.tmp" "$HISTORY_FILE"
+    # Concurrent renders (multiple sessions, refresh timer) must not clobber each
+    # other: take a lock, skip this tick if busy, and recover from a stale lock.
+    if ! mkdir "$HISTORY_LOCK" 2>/dev/null; then
+        cache_stale "$HISTORY_LOCK" 10 || return 0
+        rmdir "$HISTORY_LOCK" 2>/dev/null
+        mkdir "$HISTORY_LOCK" 2>/dev/null || return 0
     fi
-    echo "${today}	${hour}	${sid}	${dur_min}	${cost}" >> "$HISTORY_FILE"
+
+    local tmp
+    if tmp=$(mktemp "${HISTORY_FILE}.XXXXXX"); then
+        {
+            if [ -f "$HISTORY_FILE" ]; then
+                awk -F'\t' -v sid="$sid" '$3 != sid' "$HISTORY_FILE"
+            else
+                printf '# date\thour\tsession_id\tduration_min\tcost\n'
+            fi
+            printf '%s\t%s\t%s\t%s\t%s\n' "$(date +%Y-%m-%d)" "$(date +%H)" "$sid" "$dur_min" "$cost"
+        } > "$tmp" && mv "$tmp" "$HISTORY_FILE"
+        rm -f "$tmp"
+    fi
+    rmdir "$HISTORY_LOCK" 2>/dev/null
 }
 
 # Log in background to avoid blocking
-log_usage "$input" &
+log_usage "$SESSION_ID" "$DURATION_MS" "$COST" &
 
-# ── Extract data ──
-MODEL=$(echo "$input" | jq -r '.model.display_name // "?"')
-VERSION=$(echo "$input" | jq -r '.version // "?"')
-DIR=$(echo "$input" | jq -r '.workspace.current_dir // "."')
-COST=$(echo "$input" | jq -r '.cost.total_cost_usd // 0')
-DURATION_MS=$(echo "$input" | jq -r '.cost.total_duration_ms // 0')
-LINES_ADD=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
-LINES_DEL=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
-PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
-CTX_SIZE=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
-CACHE_READ=$(echo "$input" | jq -r '.context_window.current_usage.cache_read_input_tokens // 0')
-CACHE_CREATE=$(echo "$input" | jq -r '.context_window.current_usage.cache_creation_input_tokens // 0')
-INPUT_TOKENS=$(echo "$input" | jq -r '.context_window.current_usage.input_tokens // 0')
-TOTAL_IN=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
-TOTAL_OUT=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
-EXCEEDS_200K=$(echo "$input" | jq -r '.exceeds_200k_tokens // false')
+# ── Formatting helpers ──
+# Seconds → "42m", "1h 54m", "3d 4h"
+fmt_countdown() {
+    local secs="$1"
+    if [ "$secs" -le 0 ]; then echo "now"
+    elif [ "$secs" -lt 3600 ]; then echo "$((secs / 60))m"
+    elif [ "$secs" -lt 86400 ]; then echo "$((secs / 3600))h $(((secs % 3600) / 60))m"
+    else echo "$((secs / 86400))d $(((secs % 86400) / 3600))h"; fi
+}
+
+# Percentage → progress bar of a given width (clamped to 0-100%)
+render_bar() {
+    local pct="$1" width="$2"
+    [ "$pct" -gt 100 ] && pct=100
+    [ "$pct" -lt 0 ] && pct=0
+    local filled=$((pct * width / 100))
+    local empty=$((width - filled))
+    local bar="" f p
+    [ "$filled" -gt 0 ] && printf -v f "%${filled}s" && bar="${f// /━}"
+    [ "$empty" -gt 0 ]  && printf -v p "%${empty}s"  && bar="${bar}${p// /╌}"
+    printf '%s' "$bar"
+}
+
+# Percentage → "<bar color>|<dot>" using the shared 70/90 thresholds
+pct_colors() {
+    if [ "$1" -ge 90 ]; then printf '%s|%s' "$R" "${R}●${RESET}"
+    elif [ "$1" -ge 70 ]; then printf '%s|%s' "$Y" "${Y}●${RESET}"
+    else printf '%s|%s' "$G" "${B}●${RESET}"; fi
+}
 
 # ── Header ──
-printf '%b' "${D}──${RESET} ${C}${W}CORTEX${RESET} ${D}·${RESET} ${D}by Claude${RESET} ${D}──────────────────────────────────────${RESET}\n"
+HEADER_NAME=""
+[ -n "$SESSION_NAME" ] && HEADER_NAME=" ${D}·${RESET} ${C}${SESSION_NAME}${RESET}"
+printf '%b' "${D}──${RESET} ${C}${W}CORTEX${RESET} ${D}·${RESET} ${D}by Claude${RESET}${HEADER_NAME} ${D}──────────────────────────────────────${RESET}\n"
 
 # ── LOC: Location + Time + Weather ──
 if section_enabled loc; then
 WEATHER_CACHE="/tmp/claude-statusline-weather"
 WEATHER_MAX_AGE=1800  # 30 minutes
 
-if [ ! -f "$WEATHER_CACHE" ] || [ $(($(date +%s) - $(stat -f %m "$WEATHER_CACHE" 2>/dev/null || stat -c %Y "$WEATHER_CACHE" 2>/dev/null || echo 0))) -gt $WEATHER_MAX_AGE ]; then
+if cache_stale "$WEATHER_CACHE" "$WEATHER_MAX_AGE"; then
     # Fetch weather silently, don't block if it fails
-    WEATHER_RAW=$(curl -s --max-time 2 "wttr.in/?format=%l|%t|%C" 2>/dev/null)
-    if [ -n "$WEATHER_RAW" ] && [[ "$WEATHER_RAW" != *"Unknown"* ]] && [[ "$WEATHER_RAW" != *"Sorry"* ]]; then
+    WEATHER_RAW=$(curl -s --max-time 2 "https://wttr.in/?format=%l|%t|%C" 2>/dev/null)
+    if [ -n "$WEATHER_RAW" ] && [[ "$WEATHER_RAW" != *"Unknown"* ]] && [[ "$WEATHER_RAW" != *"Sorry"* ]] && [[ "$WEATHER_RAW" != *"<"* ]]; then
         echo "$WEATHER_RAW" > "$WEATHER_CACHE"
     else
         echo "Unknown|?|?" > "$WEATHER_CACHE"
@@ -112,94 +189,66 @@ if [ "$CTX_SIZE" -ge 1000000 ]; then CTX_LABEL="1M"
 elif [ "$CTX_SIZE" -ge 200000 ]; then CTX_LABEL="200K"
 else CTX_LABEL="${CTX_SIZE}"; fi
 
-# Count skills and hooks
-SK_COUNT=$(find ~/.claude/skills ~/.claude/agents 2>/dev/null | wc -l | tr -d ' ')
-HOOK_COUNT=$(echo "$input" | jq '[.hooks // {} | to_entries[].value[]?.hooks // [] | length] | add // 0' 2>/dev/null || echo "0")
-# Fallback: count hooks from settings
-if [ "$HOOK_COUNT" = "0" ] || [ "$HOOK_COUNT" = "null" ]; then
-    HOOK_COUNT=$(jq '[.. | .hooks? // empty | arrays | length] | add // 0' ~/.claude/settings.json 2>/dev/null || echo "?")
-fi
+# Model modifiers: reasoning effort + fast mode
+MODEL_EXTRA=""
+[ -n "$EFFORT" ] && MODEL_EXTRA=" ${D}·${RESET} ${C}${EFFORT}${RESET}"
+[ "$FAST_MODE" = "true" ] && MODEL_EXTRA="${MODEL_EXTRA} ${Y}⚡fast${RESET}"
 
-printf '%b' "${D}ENV:${RESET} CC:${C}${VERSION}${RESET} ${D}|${RESET} ${W}${MODEL}${RESET} ${D}(${CTX_LABEL})${RESET} ${D}|${RESET} SK: ${C}${SK_COUNT}${RESET} ${D}|${RESET} Hooks: ${C}${HOOK_COUNT}${RESET} ${D}|${RESET} ${Y}${COST_FMT}${RESET}\n"
+# Count installed skills (dirs with SKILL.md) and agents (*.md)
+shopt -s nullglob
+SK_FILES=(~/.claude/skills/*/SKILL.md ~/.claude/agents/*.md)
+shopt -u nullglob
+SK_COUNT=${#SK_FILES[@]}
+HOOK_COUNT=$(jq '[.hooks // {} | .[][]?.hooks // [] | length] | add // 0' ~/.claude/settings.json 2>/dev/null || echo "?")
+
+printf '%b' "${D}ENV:${RESET} CC:${C}${VERSION}${RESET} ${D}|${RESET} ${W}${MODEL}${RESET} ${D}(${CTX_LABEL})${RESET}${MODEL_EXTRA} ${D}|${RESET} SK: ${C}${SK_COUNT}${RESET} ${D}|${RESET} Hooks: ${C}${HOOK_COUNT}${RESET} ${D}|${RESET} ${Y}${COST_FMT}${RESET}\n"
 fi
 
 # ── CONTEXT bar ──
 if section_enabled context; then
-if [ "$PCT" -ge 90 ]; then BAR_COLOR="$R"; DOT="${R}●${RESET}"
-elif [ "$PCT" -ge 70 ]; then BAR_COLOR="$Y"; DOT="${Y}●${RESET}"
-else BAR_COLOR="$G"; DOT="${B}●${RESET}"; fi
-
-BAR_WIDTH=40
-FILLED=$((PCT * BAR_WIDTH / 100))
-EMPTY=$((BAR_WIDTH - FILLED))
-BAR=""
-[ "$FILLED" -gt 0 ] && printf -v FILL "%${FILLED}s" && BAR="${FILL// /━}"
-[ "$EMPTY" -gt 0 ] && printf -v PAD "%${EMPTY}s" && BAR="${BAR}${PAD// /╌}"
-
-printf '%b' "${DOT} ${D}CONTEXT:${RESET} ${BAR_COLOR}${BAR}${RESET} ${W}${PCT}%${RESET}\n"
+IFS='|' read -r BAR_COLOR DOT <<< "$(pct_colors "$PCT")"
+printf '%b' "${DOT} ${D}CONTEXT:${RESET} ${BAR_COLOR}$(render_bar "$PCT" 40)${RESET} ${W}${PCT}%${RESET}\n"
 fi
 
 # ── PLAN usage limits ──
 if section_enabled plan; then
-HAS_RATE_LIMITS=$(echo "$input" | jq -r 'if .rate_limits then "true" else "false" end')
-if [ "$HAS_RATE_LIMITS" = "true" ]; then
-    NOW=$(date +%s)
-    PLAN_BAR_WIDTH=40
+render_plan_bar() {
+    local label="$1" pct="$2" resets_at="$3"
+    # Window absent from the JSON (free tier, cold start, no gateway) → skip
+    [ -n "$pct" ] || return 0
+    local pct_int=${pct%.*}
+    [ -z "$pct_int" ] && pct_int=0
 
-    render_plan_bar() {
-        local label="$1" pct="$2" resets_at="$3"
-        local pct_int=${pct%.*}
-        [ -z "$pct_int" ] && pct_int=0
+    local color dot
+    IFS='|' read -r color dot <<< "$(pct_colors "$pct_int")"
 
-        local color dot
-        if [ "$pct_int" -ge 90 ]; then color="$R"; dot="${R}●${RESET}"
-        elif [ "$pct_int" -ge 70 ]; then color="$Y"; dot="${Y}●${RESET}"
-        else color="$G"; dot="${B}●${RESET}"; fi
-
-        local filled=$((pct_int * PLAN_BAR_WIDTH / 100))
-        local empty=$((PLAN_BAR_WIDTH - filled))
-        local bar=""
-        [ "$filled" -gt 0 ] && printf -v f "%${filled}s" && bar="${f// /━}"
-        [ "$empty" -gt 0 ]  && printf -v p "%${empty}s"  && bar="${bar}${p// /╌}"
-
+    local reset_str=""
+    if [ -n "$resets_at" ]; then
         local secs=$((resets_at - NOW))
-        local reset_str
-        if [ "$secs" -le 0 ]; then
-            reset_str="resetting"
-        elif [ "$secs" -lt 3600 ]; then
-            reset_str="in $((secs / 60))m"
-        elif [ "$secs" -lt 86400 ]; then
-            reset_str="in $((secs / 3600))h $(((secs % 3600) / 60))m"
-        else
-            reset_str="in $((secs / 86400))d $(((secs % 86400) / 3600))h"
-        fi
-
-        printf '%b' "${dot} ${D}${label}:${RESET} ${color}${bar}${RESET} ${W}${pct_int}%${RESET} ${D}· resets ${reset_str}${RESET}\n"
-    }
-
-    if subsection_enabled plan 5h; then
-        P5_PCT=$(echo "$input"   | jq -r '.rate_limits.five_hour.used_percentage // 0')
-        P5_RESET=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // 0')
-        render_plan_bar "PLAN 5h" "$P5_PCT" "$P5_RESET"
+        if [ "$secs" -le 0 ]; then reset_str=" ${D}· resetting${RESET}"
+        else reset_str=" ${D}· resets in $(fmt_countdown "$secs")${RESET}"; fi
     fi
 
-    if subsection_enabled plan 7d; then
-        P7_PCT=$(echo "$input"   | jq -r '.rate_limits.seven_day.used_percentage // 0')
-        P7_RESET=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // 0')
-        render_plan_bar "PLAN 7d" "$P7_PCT" "$P7_RESET"
-    fi
-fi
+    printf '%b' "${dot} ${D}${label}:${RESET} ${color}$(render_bar "$pct_int" 40)${RESET} ${W}${pct_int}%${RESET}${reset_str}\n"
+}
+
+subsection_enabled plan 5h    && render_plan_bar "PLAN 5h" "$P5_PCT" "$P5_RESET"
+subsection_enabled plan 7d    && render_plan_bar "PLAN 7d" "$P7_PCT" "$P7_RESET"
+subsection_enabled plan spend && render_plan_bar "SPEND"   "$PS_PCT" "$PS_RESET"
 fi
 
 # ── USAGE + Cache + Burn rate ──
-if section_enabled usage; then
 MINS=$((DURATION_MS / 60000))
+if section_enabled usage; then
 SECS=$(((DURATION_MS % 60000) / 1000))
 
-# Cache hit ratio
-CACHE_TOTAL=$((CACHE_READ + CACHE_CREATE + INPUT_TOKENS))
-if [ "$CACHE_TOTAL" -gt 0 ]; then
-    CACHE_PCT=$((CACHE_READ * 100 / CACHE_TOTAL))
+# Cache hit ratio: session-wide from prompt_cache, else last API call
+CACHE_PCT="$PC_HIT"
+if [ -z "$CACHE_PCT" ]; then
+    CACHE_TOTAL=$((CACHE_READ + CACHE_CREATE + INPUT_TOKENS))
+    [ "$CACHE_TOTAL" -gt 0 ] && CACHE_PCT=$((CACHE_READ * 100 / CACHE_TOTAL))
+fi
+if [ -n "$CACHE_PCT" ]; then
     if [ "$CACHE_PCT" -ge 70 ]; then CACHE_COLOR="$G"
     elif [ "$CACHE_PCT" -ge 40 ]; then CACHE_COLOR="$Y"
     else CACHE_COLOR="$R"; fi
@@ -208,9 +257,15 @@ else
     CACHE_STR="${D}--${RESET}"
 fi
 
+# Cache warmth: time left before the cached prefix expires
+if [ "$PC_WARM" = "true" ] && [ -n "$PC_EXPIRES" ] && [ "$PC_EXPIRES" -gt "$NOW" ]; then
+    CACHE_STR="${CACHE_STR} ${D}warm $(fmt_countdown $((PC_EXPIRES - NOW)))${RESET}"
+elif [ "$PC_OBSERVED" = "true" ]; then
+    CACHE_STR="${CACHE_STR} ${R}cold${RESET}"
+fi
+
 # Burn rate (cost per minute)
 if [ "$MINS" -gt 0 ]; then
-    # Use awk for floating point division
     BURN=$(awk "BEGIN { printf \"%.3f\", $COST / $MINS }")
     BURN_STR="\$${BURN}/m"
 else
@@ -219,9 +274,7 @@ fi
 
 # Exceeds 200K warning
 WARN_200K=""
-if [ "$EXCEEDS_200K" = "true" ]; then
-    WARN_200K=" ${R}⚠ >200K${RESET}"
-fi
+[ "$EXCEEDS_200K" = "true" ] && WARN_200K=" ${R}⚠ >200K${RESET}"
 
 # Format token counts (e.g. 152340 -> 152K)
 fmt_tokens() {
@@ -246,12 +299,7 @@ if section_enabled disk; then
 DISK_CACHE="/tmp/claude-statusline-disk"
 DISK_CACHE_AGE=60  # 1 minute
 
-disk_cache_stale() {
-    [ ! -f "$DISK_CACHE" ] || \
-    [ $(($(date +%s) - $(stat -f %m "$DISK_CACHE" 2>/dev/null || echo 0))) -gt $DISK_CACHE_AGE ]
-}
-
-if disk_cache_stale; then
+if cache_stale "$DISK_CACHE" "$DISK_CACHE_AGE"; then
     DISK_INFO=$(df -h / 2>/dev/null | tail -1 | awk '{print $3 "|" $4 "|" $5}')
     echo "$DISK_INFO" > "$DISK_CACHE"
 fi
@@ -270,16 +318,11 @@ fi
 if section_enabled pwd; then
 DIRNAME="${DIR##*/}"
 
-# Cache git info (5s TTL)
-GIT_CACHE="/tmp/claude-statusline-git-cache"
+# Cache git info per directory (5s TTL) so parallel sessions don't share state
+GIT_CACHE="/tmp/claude-statusline-git-$(printf '%s' "$DIR" | cksum | cut -d' ' -f1)"
 GIT_CACHE_AGE=5
 
-git_cache_stale() {
-    [ ! -f "$GIT_CACHE" ] || \
-    [ $(($(date +%s) - $(stat -f %m "$GIT_CACHE" 2>/dev/null || stat -c %Y "$GIT_CACHE" 2>/dev/null || echo 0))) -gt $GIT_CACHE_AGE ]
-}
-
-if git_cache_stale; then
+if cache_stale "$GIT_CACHE" "$GIT_CACHE_AGE"; then
     if git -C "$DIR" rev-parse --git-dir > /dev/null 2>&1; then
         BRANCH=$(git -C "$DIR" --no-optional-locks branch --show-current 2>/dev/null)
         MODIFIED=$(git -C "$DIR" --no-optional-locks status --porcelain 2>/dev/null | wc -l | tr -d ' ')
@@ -300,6 +343,19 @@ if [ -n "$BRANCH" ]; then
     GIT_INFO="${GIT_INFO} ${D}|${RESET} Mod: ${Y}${MODIFIED}${RESET}"
     [ "$AHEAD" -gt 0 ] 2>/dev/null && GIT_INFO="${GIT_INFO} ${D}|${RESET} Sync: ${G}↑${AHEAD}${RESET}"
 fi
+[ -n "$WORKTREE" ] && GIT_INFO="${GIT_INFO} ${D}|${RESET} WT: ${C}${WORKTREE}${RESET}"
+
+# Open PR / MR for this branch, colored by review state
+if [ -n "$PR_NUM" ]; then
+    case "$PR_STATE" in
+        approved)          PR_COLOR="$G"; PR_ICON="✓" ;;
+        changes_requested) PR_COLOR="$R"; PR_ICON="✗" ;;
+        draft)             PR_COLOR="$D"; PR_ICON="◌" ;;
+        *)                 PR_COLOR="$Y"; PR_ICON="…" ;;
+    esac
+    PR_LABEL="PR"; [ "$PR_KIND" = "mr" ] && PR_LABEL="MR"
+    GIT_INFO="${GIT_INFO} ${D}|${RESET} ${PR_LABEL}: ${PR_COLOR}#${PR_NUM} ${PR_ICON}${RESET}"
+fi
 
 printf '%b' "${C}◆${RESET} ${C}PWD:${RESET} ${W}${DIRNAME}${RESET} ${GIT_INFO}\n"
 fi
@@ -308,13 +364,21 @@ fi
 if section_enabled memory; then
 MEM_DIR="$HOME/.claude/projects"
 if [ -d "$MEM_DIR" ]; then
-    # Count .md files across all project memory dirs (excluding MEMORY.md index files)
-    MEM_TOTAL=$(find "$MEM_DIR" -name "*.md" ! -name "MEMORY.md" 2>/dev/null | wc -l | tr -d ' ')
-    # Count by type if possible
-    MEM_USER=$(find "$MEM_DIR" -name "user_*.md" 2>/dev/null | wc -l | tr -d ' ')
-    MEM_FEEDBACK=$(find "$MEM_DIR" -name "feedback_*.md" 2>/dev/null | wc -l | tr -d ' ')
-    MEM_PROJECT=$(find "$MEM_DIR" -name "project_*.md" 2>/dev/null | wc -l | tr -d ' ')
-    MEM_REF=$(find "$MEM_DIR" -name "reference_*.md" 2>/dev/null | wc -l | tr -d ' ')
+    # Classify each memory file by its frontmatter `type:` (top-level or under
+    # `metadata:`), falling back to the legacy `<type>_*.md` filename prefix.
+    MEM_TYPES=$(find -H "$MEM_DIR" -path '*/memory/*.md' ! -name 'MEMORY.md' -print0 2>/dev/null | xargs -0 awk '
+        function flush() { if (file != "") { if (t == "") { t = file; sub(/.*\//, "", t); sub(/_.*/, "", t) } print t } }
+        FNR == 1 { flush(); file = FILENAME; t = ""; fm = 0 }
+        /^---[[:space:]]*$/ { fm++; next }
+        fm == 1 && t == "" && /^[[:space:]]*type:/ { t = $0; sub(/^[[:space:]]*type:[[:space:]]*/, "", t); sub(/[[:space:]]*$/, "", t) }
+        END { flush() }
+    ' 2>/dev/null)
+    count_type() { printf '%s\n' "$MEM_TYPES" | grep -cx "$1"; }
+    MEM_TOTAL=$(printf '%s' "$MEM_TYPES" | grep -c .)
+    MEM_USER=$(count_type user)
+    MEM_FEEDBACK=$(count_type feedback)
+    MEM_PROJECT=$(count_type project)
+    MEM_REF=$(count_type reference)
 
     printf '%b' "${M}◉${RESET} ${M}MEMORY:${RESET} 📂 ${W}${MEM_TOTAL}${RESET} Total ${D}|${RESET} ${C}♦${MEM_USER}${RESET} User ${D}|${RESET} ${Y}♦${MEM_FEEDBACK}${RESET} Feedback ${D}|${RESET} ${G}♦${MEM_PROJECT}${RESET} Project ${D}|${RESET} ${M}♦${MEM_REF}${RESET} Ref\n"
 fi
@@ -325,13 +389,9 @@ if section_enabled activity; then
 HEATMAP_CACHE="/tmp/claude-statusline-heatmap"
 HEATMAP_CACHE_AGE=30  # refresh every 30 seconds
 
-heatmap_cache_stale() {
-    [ ! -f "$HEATMAP_CACHE" ] || \
-    [ $(($(date +%s) - $(stat -f %m "$HEATMAP_CACHE" 2>/dev/null || echo 0))) -gt $HEATMAP_CACHE_AGE ]
-}
-
-if heatmap_cache_stale && [ -f "$HOME/.claude/usage-heatmap.py" ]; then
-    python3 "$HOME/.claude/usage-heatmap.py" > "$HEATMAP_CACHE" 2>/dev/null
+if cache_stale "$HEATMAP_CACHE" "$HEATMAP_CACHE_AGE" && [ -f "$HOME/.claude/usage-heatmap.py" ]; then
+    python3 "$HOME/.claude/usage-heatmap.py" > "${HEATMAP_CACHE}.$$" 2>/dev/null && mv "${HEATMAP_CACHE}.$$" "$HEATMAP_CACHE"
+    rm -f "${HEATMAP_CACHE}.$$"
 fi
 
 [ -f "$HEATMAP_CACHE" ] && cat "$HEATMAP_CACHE"
