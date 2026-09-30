@@ -25,13 +25,28 @@ Cortex transforms the Claude Code status bar into a full monitoring dashboard wi
 ## Quick Start
 
 ```bash
-git clone https://github.com/Mysticoleslaw/cortex-dashboard.git
-cd cortex-dashboard
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Mysticoleslaw/cortex-dashboard/Main/get.sh | bash
 ```
 
 Then start a new Claude Code session. Cortex appears at the bottom of your terminal.
+
+This downloads Cortex into `~/.cortex-dashboard` and runs `install.sh`. Run the same command again to update. Want to read it before running it? It's short: [`get.sh`](get.sh).
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `CORTEX_REF` | `Main` | Branch or tag to install, e.g. `CORTEX_REF=v1.3.0` |
+| `CORTEX_DIR` | `~/.cortex-dashboard` | Where the source is kept |
+| `CORTEX_BIN_DIR` | `/usr/local/bin` | Where the `cortex-config` shortcut goes |
+
+Set them on `bash`, e.g. `curl -fsSL …/get.sh | CORTEX_REF=v1.3.0 bash`.
+
+### Manual install
+
+```bash
+git clone https://github.com/Mysticoleslaw/cortex-dashboard.git
+cd cortex-dashboard
+./install.sh
+```
 
 ## Compatibility
 

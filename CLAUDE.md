@@ -8,6 +8,7 @@ A multi-line statusline dashboard for the Claude Code CLI. Claude Code pipes ses
 - `usage-heatmap.py`: the ACTIVITY section renderer (python3, stdlib only).
 - `cortex-config-tui.py`: curses config screen (`cortex-config`). Its lists (`SECTIONS`, `PLAN_SUBS`, `ACTIVITY_SUBS`) drive the UI generically.
 - `cortex-command.md`: the `/cortex` slash command, installed to `~/.claude/commands/cortex.md`.
+- `get.sh`: the `curl … | bash` one-liner. Clones/updates `~/.cortex-dashboard` and runs `install.sh`. Keep its body inside `main()` so a truncated download never runs a partial script.
 - `install.sh` / `uninstall.sh`: copy files into `~/.claude` and set/remove `statusLine` in `settings.json` (with `refreshInterval: 30`).
 
 ## Architecture
@@ -34,6 +35,7 @@ CI (`.github/workflows/test.yml`) runs syntax checks and the suite on ubuntu-lat
 - The default branch is **`Main`** (capital M). PRs target `Main`; squash-merge.
 - Keep the script portable across macOS (BSD) and Linux (GNU): `file_mtime` branches on `uname`; avoid `sed -i`, GNU-only flags, and `awk` features mawk lacks (e.g. `nextfile`).
 - Anything interpolated into output from the payload must be treated as untrusted. Strip control characters before emitting it inside escape sequences (see the OSC 8 PR link).
+- Anything that writes outside `~/.claude` must honor an env override (`CORTEX_CACHE_DIR`, `CORTEX_BIN_DIR`, `CORTEX_DIR`) so tests can sandbox it. The suite must never touch real `/tmp` caches or `/usr/local/bin`.
 - Tests compare rendered countdowns as text. Give fixture timestamps a little slack (e.g. `NOW + 2550` for "42m"), or a render landing a second later flakes.
 - Color thresholds: context/plan 70/90%, cache hit 70/40%, disk 75/90%. The dot is blue when healthy.
 - After changing a section, update the README's "Reading the Dashboard" tables and, if it's a new toggle, the TUI lists, `cortex-config.default.json`, and `cortex-command.md`.

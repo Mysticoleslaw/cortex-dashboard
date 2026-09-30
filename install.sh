@@ -43,8 +43,9 @@ cp "$SCRIPT_DIR/cortex-config-tui.py" "$CLAUDE_DIR/cortex-config-tui.py"
 chmod +x "$CLAUDE_DIR/cortex-config-tui.py"
 
 # Create symlink for easy access
-if [ -d "/usr/local/bin" ]; then
-    ln -sf "$CLAUDE_DIR/cortex-config-tui.py" /usr/local/bin/cortex-config 2>/dev/null || true
+BIN_DIR="${CORTEX_BIN_DIR:-/usr/local/bin}"
+if [ -d "$BIN_DIR" ]; then
+    ln -sf "$CLAUDE_DIR/cortex-config-tui.py" "$BIN_DIR/cortex-config" 2>/dev/null || true
 fi
 
 # Update settings.json — keep any existing statusLine options (e.g. padding),

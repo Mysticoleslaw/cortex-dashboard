@@ -2,6 +2,15 @@
 
 All notable changes to Cortex are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-09-30
+
+### Added
+- **One-line install:** `curl -fsSL https://raw.githubusercontent.com/Mysticoleslaw/cortex-dashboard/Main/get.sh | bash`. It downloads into `~/.cortex-dashboard` (with git, or a tarball if git is missing) and runs `install.sh`. Re-run it to update. `CORTEX_REF` pins a branch or tag.
+- `CORTEX_BIN_DIR` sets where the `cortex-config` shortcut goes (default `/usr/local/bin`).
+
+### Fixed
+- `uninstall.sh` respects `CORTEX_CACHE_DIR`, so the test suite no longer clears real caches in `/tmp`.
+
 ## [1.2.0] — 2026-09-30
 
 Brings Cortex up to date with the Claude Code 2.1.2xx statusline data and fixes several long-standing bugs.

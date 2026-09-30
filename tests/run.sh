@@ -163,6 +163,29 @@ check "gaps ≤5 min are filled, longer gaps aren't (5 active min)" '[ "$T_DAY" 
 check "legacy days capped at 24h/day, 60m/hour" '[ "$Y_DAY" = 1440 ] && [ "$Y_HOUR" = 60 ]'
 check "heatmap renders"                    'python3 "$CD/usage-heatmap.py" | grep -q ACTIVITY'
 
+echo "── One-line install"
+# Local stand-in for GitHub: the working tree committed on a Main branch
+FX="$SANDBOX/remote"; mkdir -p "$FX"
+tar -C "$REPO" --exclude .git -cf - . | tar -C "$FX" -xf -
+git -C "$FX" init -q -b Main
+git -C "$FX" add -A
+git -C "$FX" -c user.name=test -c user.email=test@test commit -qm fixture
+H2="$SANDBOX/home2"; BIN="$SANDBOX/bin"; mkdir -p "$H2/.claude" "$BIN"
+echo '{"statusLine":{"padding":2}}' > "$H2/.claude/settings.json"
+get() { HOME="$H2" CORTEX_REPO_URL="$FX" CORTEX_BIN_DIR="$BIN" bash "$REPO/get.sh" > /dev/null 2>&1; }
+get; FIRST=$?
+check "get.sh installs from a fresh machine" '[ "$FIRST" = 0 ] && cmp -s "$REPO/cortex.sh" "$H2/.claude/statusline-command.sh"'
+check "source kept in ~/.cortex-dashboard" '[ -f "$H2/.cortex-dashboard/install.sh" ]'
+check "settings get command + refreshInterval, keep padding" \
+    '[ "$(jq -c ".statusLine | [.refreshInterval, .padding]" "$H2/.claude/settings.json")" = "[30,2]" ]'
+check "cortex-config shortcut goes to CORTEX_BIN_DIR" '[ -L "$BIN/cortex-config" ]'
+get; SECOND=$?
+check "re-running get.sh updates in place"  '[ "$SECOND" = 0 ]'
+HOME="$H2" CORTEX_BIN_DIR="$BIN" bash "$REPO/uninstall.sh" > /dev/null 2>&1
+check "uninstall removes script, setting, shortcut" \
+    '[ ! -f "$H2/.claude/statusline-command.sh" ] && [ "$(jq .statusLine "$H2/.claude/settings.json")" = null ] && [ ! -e "$BIN/cortex-config" ]'
+check "uninstall keeps config"              '[ -f "$H2/.claude/cortex-config.json" ]'
+
 echo
 if [ "$FAIL" -eq 0 ]; then printf '\033[32m%d passed\033[0m\n' "$PASS"; exit 0
 else printf '\033[31m%d failed\033[0m, %d passed\n' "$FAIL" "$PASS"; exit 1; fi
