@@ -187,7 +187,7 @@ fxgit() { git -C "$FX" -c user.name=test -c user.email=test@test "$@"; }
 fxgit init -q -b Main
 echo v1.2.9 > "$FX/VERSION"; fxgit add -A; fxgit commit -qm old; fxgit tag v1.2.9
 echo v1.3.0 > "$FX/VERSION"; fxgit commit -qam new; fxgit tag v1.3.0
-H2="$SANDBOX/home2"; BIN="$SANDBOX/bin"; mkdir -p "$H2/.claude" "$BIN"
+H2="$SANDBOX/home2"; BIN="$SANDBOX/bin/not-yet"; mkdir -p "$H2/.claude"
 echo '{"statusLine":{"padding":2}}' > "$H2/.claude/settings.json"
 export_h2() { HOME="$H2" CORTEX_REPO_URL="$FX" CORTEX_BIN_DIR="$BIN" "$@"; }
 get() { export_h2 bash "$REPO/get.sh" > /dev/null 2>&1; }

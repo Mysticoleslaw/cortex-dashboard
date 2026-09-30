@@ -9,10 +9,11 @@ All notable changes to Cortex are documented here. The format follows [Keep a Ch
 - **Update notice:** the header shows `⬆ vX.Y.Z available · cortex update` when a newer release exists. It checks GitHub once a day in the background; toggle with the new `updates` section.
 - **`cortex` command:** `update`, `rollback`, `use <version>`, `version`, `versions`. Also available as `/cortex update`, `/cortex rollback`, etc.
 - `VERSION` file; the installed version is recorded in `~/.claude/cortex-version`.
-- `CORTEX_BIN_DIR` sets where the `cortex-config` shortcut goes (default `/usr/local/bin`).
+- `cortex` and `cortex-config` shortcuts go in `~/.local/bin` (override with `CORTEX_BIN_DIR`); the installer creates it if needed.
 
 ### Fixed
 - `uninstall.sh` respects `CORTEX_CACHE_DIR`, so the test suite no longer clears real caches in `/tmp`.
+- The `cortex-config` shortcut was never created on most Macs: `/usr/local/bin` is root-owned, and the link failed silently. Shortcuts now go to `~/.local/bin`.
 
 ## [1.2.0] — 2026-09-30
 

@@ -14,14 +14,16 @@ rm -f "$CLAUDE_DIR/commands/cortex.md"
 rm -f "$CLAUDE_DIR/cortex-cli.sh"
 rm -f "$CLAUDE_DIR/cortex-version"
 
-# Remove the cortex-config shortcut, but only if it points at Cortex
-BIN_DIR="${CORTEX_BIN_DIR:-/usr/local/bin}"
-if [ "$(readlink "$BIN_DIR/cortex-config" 2>/dev/null)" = "$CLAUDE_DIR/cortex-config-tui.py" ]; then
-    rm -f "$BIN_DIR/cortex-config"
-fi
-if [ "$(readlink "$BIN_DIR/cortex" 2>/dev/null)" = "$CLAUDE_DIR/cortex-cli.sh" ]; then
-    rm -f "$BIN_DIR/cortex"
-fi
+# Remove the cortex / cortex-config shortcuts, but only ones pointing at Cortex
+# (also checks /usr/local/bin, where versions before 1.3.0 tried to link)
+for BIN_DIR in "${CORTEX_BIN_DIR:-$HOME/.local/bin}" /usr/local/bin; do
+    if [ "$(readlink "$BIN_DIR/cortex-config" 2>/dev/null)" = "$CLAUDE_DIR/cortex-config-tui.py" ]; then
+        rm -f "$BIN_DIR/cortex-config"
+    fi
+    if [ "$(readlink "$BIN_DIR/cortex" 2>/dev/null)" = "$CLAUDE_DIR/cortex-cli.sh" ]; then
+        rm -f "$BIN_DIR/cortex"
+    fi
+done
 
 # Remove statusLine (command + refreshInterval) from settings
 if [ -f "$CLAUDE_DIR/settings.json" ] && command -v jq &> /dev/null; then

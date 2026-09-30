@@ -36,7 +36,7 @@ This installs the latest release into `~/.cortex-dashboard` and runs `install.sh
 |--------|---------|--------------|
 | `CORTEX_REF` | latest release | Version, branch, or tag to install, e.g. `CORTEX_REF=v1.3.0` |
 | `CORTEX_DIR` | `~/.cortex-dashboard` | Where the source is kept |
-| `CORTEX_BIN_DIR` | `/usr/local/bin` | Where the `cortex-config` shortcut goes |
+| `CORTEX_BIN_DIR` | `~/.local/bin` | Where the `cortex` and `cortex-config` shortcuts go |
 
 Set them on `bash`, e.g. `curl -fsSL …/get.sh | CORTEX_REF=v1.3.0 bash`.
 
