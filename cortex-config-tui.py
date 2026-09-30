@@ -18,6 +18,7 @@ SECTIONS = [
     ("pwd",      "Working directory + git status"),
     ("memory",   "Memory file counts"),
     ("activity", "Activity heatmap (1d, 1w, 1mo, year)"),
+    ("updates",  "Update notice (checks GitHub daily)"),
 ]
 
 PLAN_SUBS = [

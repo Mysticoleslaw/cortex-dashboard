@@ -25,13 +25,44 @@ Cortex transforms the Claude Code status bar into a full monitoring dashboard wi
 ## Quick Start
 
 ```bash
-git clone https://github.com/Mysticoleslaw/cortex-dashboard.git
-cd cortex-dashboard
-chmod +x install.sh
-./install.sh
+curl -fsSL https://raw.githubusercontent.com/Mysticoleslaw/cortex-dashboard/Main/get.sh | bash
 ```
 
 Then start a new Claude Code session. Cortex appears at the bottom of your terminal.
+
+This installs the latest release into `~/.cortex-dashboard` and runs `install.sh`. Want to read it before running it? It's short: [`get.sh`](get.sh).
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `CORTEX_REF` | latest release | Version, branch, or tag to install, e.g. `CORTEX_REF=v1.3.0` |
+| `CORTEX_DIR` | `~/.cortex-dashboard` | Where the source is kept |
+| `CORTEX_BIN_DIR` | `~/.local/bin` | Where the `cortex` and `cortex-config` shortcuts go |
+
+Set them on `bash`, e.g. `curl -fsSL …/get.sh | CORTEX_REF=v1.3.0 bash`.
+
+## Updating and Rolling Back
+
+When a new release is out, the dashboard header shows `⬆ v1.4.0 available · cortex update`. Cortex asks GitHub once a day in the background; turn it off with `/cortex off updates` or `"updates": false`.
+
+| Command | What it does |
+|---------|--------------|
+| `cortex update` | Install the latest release |
+| `cortex rollback` | Go back to the release before the installed one |
+| `cortex use v1.2.0` | Install a specific release |
+| `cortex version` | Show the installed version and whether an update exists |
+| `cortex versions` | List available releases |
+
+The same commands work inside Claude Code as `/cortex update`, `/cortex rollback`, and so on. Your config, usage history, and activity log carry over between versions. Settings added in newer versions default to on, so switching back and forth is safe.
+
+Versions older than 1.3.0 don't have the update notice. The `cortex` command itself is kept when you roll back, so `cortex update` always brings you forward again. If `cortex` isn't on your PATH, run `~/.claude/cortex-cli.sh`.
+
+### Manual install
+
+```bash
+git clone https://github.com/Mysticoleslaw/cortex-dashboard.git
+cd cortex-dashboard
+./install.sh
+```
 
 ## Compatibility
 
@@ -92,6 +123,8 @@ Cortex caches expensive operations to stay fast:
 ├── usage-heatmap.py       # Activity heatmap renderer
 ├── cortex-config.json     # Section toggle config
 ├── cortex-config-tui.py   # Interactive config TUI (`cortex-config`)
+├── cortex-cli.sh          # `cortex` update / rollback command
+├── cortex-version         # Installed version (e.g. v1.3.0)
 ├── commands/cortex.md     # /cortex slash command
 ├── activity-minutes.log   # Active minutes for the heatmap (auto-generated)
 └── usage-history.tsv      # Per-session duration + cost (auto-generated)
@@ -105,7 +138,7 @@ Caches live in `/tmp/claude-statusline-*` (override with `CORTEX_CACHE_DIR`).
 ./tests/run.sh
 ```
 
-Renders the dashboard against fixture payloads in a throwaway HOME and cache directory, so it never touches your real `~/.claude`. CI runs it on Linux and macOS for every push and pull request. It covers every section, config toggles, concurrent history writes, active-minute logging, and heatmap math.
+Renders the dashboard against fixture payloads in a throwaway HOME and cache directory, so it never touches your real `~/.claude`. CI runs it on Linux and macOS for every push and pull request. It covers every section, config toggles, concurrent history writes, active-minute logging, heatmap math, the update notice, and the full install → update → rollback cycle against a local stand-in repo.
 
 ## Uninstall
 
@@ -113,7 +146,7 @@ Renders the dashboard against fixture payloads in a throwaway HOME and cache dir
 ./uninstall.sh
 ```
 
-This removes the scripts, the config TUI, the `/cortex` command, the `statusLine` setting, and all caches. Your config, usage history, and activity log are preserved.
+This removes the scripts, the config TUI, the `cortex` and `/cortex` commands, the `statusLine` setting, and all caches. Your config, usage history, and activity log are preserved.
 
 ## Reading the Dashboard
 
@@ -224,11 +257,13 @@ Cortex includes a `/cortex` command for Claude Code to manage sections on the fl
 /cortex minimal      — only context + pwd
 /cortex full         — enable everything
 /cortex reset        — reset to defaults
+/cortex update       — install the latest release
+/cortex rollback     — go back to the previous release
 ```
 
 ### Available Section Keys
 
-`loc` · `env` · `context` · `plan` · `usage` · `disk` · `pwd` · `memory` · `activity`
+`loc` · `env` · `context` · `plan` · `usage` · `disk` · `pwd` · `memory` · `activity` · `updates`
 
 ### Plan Sub-Toggles
 

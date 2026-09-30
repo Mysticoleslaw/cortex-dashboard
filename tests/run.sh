@@ -25,12 +25,12 @@ render() { bash "$REPO/cortex.sh" | sed -e $'s/\x1b\\[[0-9;]*m//g' -e $'s/\x1b]8
 render_raw() { bash "$REPO/cortex.sh"; }
 settle() { sleep 0.5; }  # background loggers
 
-# LOC fetches weather over the network — keep tests offline
+# LOC (weather) and the update check hit the network — keep tests offline
 write_config() {
     local extra='{}'
     [ $# -gt 0 ] && extra="$1"
     jq -n --argjson extra "$extra" \
-        '{"sections": {"loc": false}} * $extra' > "$CD/cortex-config.json"
+        '{"sections": {"loc": false, "updates": false}} * $extra' > "$CD/cortex-config.json"
 }
 
 # ── Fixtures ──
@@ -162,6 +162,73 @@ read -r T_DAY T_HOUR Y_DAY Y_HOUR <<< "$RESULT"
 check "gaps ≤5 min are filled, longer gaps aren't (5 active min)" '[ "$T_DAY" = 5 ] && [ "$T_HOUR" = 5 ]'
 check "legacy days capped at 24h/day, 60m/hour" '[ "$Y_DAY" = 1440 ] && [ "$Y_HOUR" = 60 ]'
 check "heatmap renders"                    'python3 "$CD/usage-heatmap.py" | grep -q ACTIVITY'
+
+echo "── Update notice"
+write_config '{"sections":{"updates":true}}'
+echo v1.3.0 > "$CD/cortex-version"
+UC="$CORTEX_CACHE_DIR/claude-statusline-update"
+echo v1.4.0 > "$UC"; OUT=$(echo '{}' | render)
+check "banner when a newer release exists"  'has "$OUT" "⬆ v1.4.0 available · cortex update"'
+echo v1.3.0 > "$UC"; OUT=$(echo '{}' | render)
+check "no banner when up to date"           '! has "$OUT" "available"'
+echo v1.2.0 > "$UC"; OUT=$(echo '{}' | render)
+check "no banner when installed is newer"   '! has "$OUT" "available"'
+printf '\033[31mEVIL\n' > "$UC"; RAW=$(echo '{}' | render_raw)
+check "junk in update cache is ignored"     '! has "$RAW" "EVIL"'
+echo v1.4.0 > "$UC"; write_config; OUT=$(echo '{}' | render)
+check "updates toggle turns the notice off" '! has "$OUT" "available"'
+rm -f "$UC" "$CD/cortex-version"
+
+echo "── Install, update, rollback"
+# Local stand-in for GitHub: the working tree committed on Main, released twice
+FX="$SANDBOX/remote"; mkdir -p "$FX"
+tar -C "$REPO" --exclude .git -cf - . | tar -C "$FX" -xf -
+fxgit() { git -C "$FX" -c user.name=test -c user.email=test@test "$@"; }
+fxgit init -q -b Main
+echo v1.2.9 > "$FX/VERSION"; fxgit add -A; fxgit commit -qm old; fxgit tag v1.2.9
+echo v1.3.0 > "$FX/VERSION"; fxgit commit -qam new; fxgit tag v1.3.0
+H2="$SANDBOX/home2"; BIN="$SANDBOX/bin/not-yet"; mkdir -p "$H2/.claude"
+echo '{"statusLine":{"padding":2}}' > "$H2/.claude/settings.json"
+export_h2() { HOME="$H2" CORTEX_REPO_URL="$FX" CORTEX_BIN_DIR="$BIN" "$@"; }
+get() { export_h2 bash "$REPO/get.sh" > /dev/null 2>&1; }
+cli() { export_h2 bash "$H2/.claude/cortex-cli.sh" "$@" 2>&1; }
+installed() { cat "$H2/.claude/cortex-version"; }
+src_version() { cat "$H2/.cortex-dashboard/VERSION"; }
+
+get; FIRST=$?
+check "get.sh installs the latest release"  '[ "$FIRST" = 0 ] && [ "$(installed)" = v1.3.0 ] && [ "$(src_version)" = v1.3.0 ]'
+check "dashboard script installed"          'cmp -s "$H2/.cortex-dashboard/cortex.sh" "$H2/.claude/statusline-command.sh"'
+check "settings get command + refreshInterval, keep padding" \
+    '[ "$(jq -c ".statusLine | [.refreshInterval, .padding]" "$H2/.claude/settings.json")" = "[30,2]" ]'
+check "cortex + cortex-config shortcuts in CORTEX_BIN_DIR" '[ -L "$BIN/cortex" ] && [ -L "$BIN/cortex-config" ]'
+
+OUT=$(cli versions)
+check "cortex versions lists releases, marks installed" 'has "$OUT" "* v1.3.0 (installed)" && has "$OUT" "  v1.2.9"'
+OUT=$(cli update)
+check "cortex update when current is a no-op" 'has "$OUT" "up to date"'
+OUT=$(cli rollback)
+check "cortex rollback goes to previous release" '[ "$(installed)" = v1.2.9 ] && [ "$(src_version)" = v1.2.9 ]'
+OUT=$(cli rollback); RC=$?
+check "rollback past the oldest release fails cleanly" '[ "$RC" != 0 ] && has "$OUT" "no release older" && [ "$(installed)" = v1.2.9 ]'
+OUT=$(cli version)
+check "cortex version reports an update"    'has "$OUT" "Installed: v1.2.9" && has "$OUT" "v1.3.0 — run '"'"'cortex update'"'"'"'
+OUT=$(cli update)
+check "cortex update installs the latest"   '[ "$(installed)" = v1.3.0 ] && [ "$(src_version)" = v1.3.0 ]'
+echo v1.9.0 > "$H2/.claude/cortex-version"; OUT=$(cli update)
+check "cortex update never downgrades"      'has "$OUT" "newer than the latest release" && [ "$(installed)" = v1.9.0 ]'
+OUT=$(cli version)
+check "cortex version doesn't suggest a downgrade" 'has "$OUT" "ahead of the latest release" && ! has "$OUT" "run '"'"'cortex update'"'"'"'
+OUT=$(cli use 1.2.9)
+check "cortex use <version> (v optional)"   '[ "$(installed)" = v1.2.9 ]'
+OUT=$(cli use v9.9.9); RC=$?
+check "cortex use unknown version fails, changes nothing" '[ "$RC" != 0 ] && has "$OUT" "no release named v9.9.9" && [ "$(installed)" = v1.2.9 ]'
+UPD=$(export_h2 env CORTEX_REF=Main bash "$REPO/get.sh" > /dev/null 2>&1; echo $?)
+check "get.sh CORTEX_REF installs a branch" '[ "$UPD" = 0 ] && [ "$(installed)" = Main ]'
+
+export_h2 bash "$REPO/uninstall.sh" > /dev/null 2>&1
+check "uninstall removes scripts, setting, shortcuts" \
+    '[ ! -f "$H2/.claude/statusline-command.sh" ] && [ ! -f "$H2/.claude/cortex-cli.sh" ] && [ "$(jq .statusLine "$H2/.claude/settings.json")" = null ] && [ ! -e "$BIN/cortex" ] && [ ! -e "$BIN/cortex-config" ]'
+check "uninstall keeps config"              '[ -f "$H2/.claude/cortex-config.json" ]'
 
 echo
 if [ "$FAIL" -eq 0 ]; then printf '\033[32m%d passed\033[0m\n' "$PASS"; exit 0

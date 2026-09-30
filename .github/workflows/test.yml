@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Syntax check
         run: |
-          bash -n cortex.sh install.sh uninstall.sh tests/run.sh
+          bash -n cortex.sh cortex-cli.sh get.sh install.sh uninstall.sh tests/run.sh
           python3 -m py_compile usage-heatmap.py cortex-config-tui.py
           jq empty cortex-config.default.json
       - name: Run tests

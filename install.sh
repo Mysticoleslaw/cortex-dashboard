@@ -42,9 +42,28 @@ cp "$SCRIPT_DIR/cortex-command.md" "$CLAUDE_DIR/commands/cortex.md"
 cp "$SCRIPT_DIR/cortex-config-tui.py" "$CLAUDE_DIR/cortex-config-tui.py"
 chmod +x "$CLAUDE_DIR/cortex-config-tui.py"
 
-# Create symlink for easy access
-if [ -d "/usr/local/bin" ]; then
-    ln -sf "$CLAUDE_DIR/cortex-config-tui.py" /usr/local/bin/cortex-config 2>/dev/null || true
+# Install the `cortex` update/rollback command. Copy to a temp file and mv, so
+# a running `cortex update` (which calls this script) is never overwritten in place.
+cp "$SCRIPT_DIR/cortex-cli.sh" "$CLAUDE_DIR/cortex-cli.sh.tmp"
+chmod +x "$CLAUDE_DIR/cortex-cli.sh.tmp"
+mv "$CLAUDE_DIR/cortex-cli.sh.tmp" "$CLAUDE_DIR/cortex-cli.sh"
+
+# Record the installed version (get.sh / `cortex` overwrite this with the exact ref)
+[ -f "$SCRIPT_DIR/VERSION" ] && cp "$SCRIPT_DIR/VERSION" "$CLAUDE_DIR/cortex-version"
+
+# Create symlinks for easy access. ~/.local/bin is per-user (no sudo needed);
+# /usr/local/bin is usually root-owned on macOS, so linking there silently fails.
+BIN_DIR="${CORTEX_BIN_DIR:-$HOME/.local/bin}"
+mkdir -p "$BIN_DIR" 2>/dev/null || true
+ln -sf "$CLAUDE_DIR/cortex-config-tui.py" "$BIN_DIR/cortex-config" 2>/dev/null || true
+ln -sf "$CLAUDE_DIR/cortex-cli.sh" "$BIN_DIR/cortex" 2>/dev/null || true
+if [ ! -L "$BIN_DIR/cortex" ]; then
+    echo "Note: couldn't link 'cortex' into $BIN_DIR — run it as ~/.claude/cortex-cli.sh"
+else
+    case ":$PATH:" in
+        *":$BIN_DIR:"*) ;;
+        *) echo "Note: add $BIN_DIR to your PATH to use 'cortex' and 'cortex-config' (or run ~/.claude/cortex-cli.sh)" ;;
+    esac
 fi
 
 # Update settings.json — keep any existing statusLine options (e.g. padding),
@@ -66,5 +85,7 @@ echo "  /cortex          — show current config"
 echo "  /cortex toggle X — toggle a section on/off"
 echo "  /cortex minimal  — context + pwd only"
 echo "  /cortex full     — enable all sections"
+echo "  cortex update    — install the latest release"
+echo "  cortex rollback  — go back to the previous release"
 echo ""
 echo "Start a new Claude Code session to see your dashboard."

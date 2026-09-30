@@ -8,7 +8,8 @@
     "disk": true,
     "pwd": true,
     "memory": true,
-    "activity": true
+    "activity": true,
+    "updates": true
   },
   "plan": {
     "5h": true,
