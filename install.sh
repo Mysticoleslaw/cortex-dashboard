@@ -47,36 +47,19 @@ if [ -d "/usr/local/bin" ]; then
     ln -sf "$CLAUDE_DIR/cortex-config-tui.py" /usr/local/bin/cortex-config 2>/dev/null || true
 fi
 
-# Update settings.json
-if [ -f "$CLAUDE_DIR/settings.json" ]; then
-    # Check if statusLine already exists
-    if jq -e '.statusLine' "$CLAUDE_DIR/settings.json" > /dev/null 2>&1; then
-        # Update existing
-        jq '.statusLine = {"type": "command", "command": "/bin/bash '"$CLAUDE_DIR"'/statusline-command.sh"}' \
-            "$CLAUDE_DIR/settings.json" > "$CLAUDE_DIR/settings.json.tmp" && \
-            mv "$CLAUDE_DIR/settings.json.tmp" "$CLAUDE_DIR/settings.json"
-    else
-        # Add new
-        jq '. + {"statusLine": {"type": "command", "command": "/bin/bash '"$CLAUDE_DIR"'/statusline-command.sh"}}' \
-            "$CLAUDE_DIR/settings.json" > "$CLAUDE_DIR/settings.json.tmp" && \
-            mv "$CLAUDE_DIR/settings.json.tmp" "$CLAUDE_DIR/settings.json"
-    fi
-else
-    # Create minimal settings
-    cat > "$CLAUDE_DIR/settings.json" << EOF
-{
-    "statusLine": {
-        "type": "command",
-        "command": "/bin/bash $CLAUDE_DIR/statusline-command.sh"
-    }
-}
-EOF
-fi
+# Update settings.json — keep any existing statusLine options (e.g. padding),
+# and refresh every 30s so the clock and reset countdowns stay current when idle
+STATUSLINE_CMD="/bin/bash $CLAUDE_DIR/statusline-command.sh"
+[ -f "$CLAUDE_DIR/settings.json" ] || echo '{}' > "$CLAUDE_DIR/settings.json"
+jq --arg cmd "$STATUSLINE_CMD" \
+    '.statusLine = ((.statusLine // {}) + {"type": "command", "command": $cmd, "refreshInterval": (.statusLine.refreshInterval // 30)})' \
+    "$CLAUDE_DIR/settings.json" > "$CLAUDE_DIR/settings.json.tmp" && \
+    mv "$CLAUDE_DIR/settings.json.tmp" "$CLAUDE_DIR/settings.json"
 
 echo ""
 echo "── CORTEX · by Claude ──"
 echo ""
-echo "Sections: LOC · ENV · CONTEXT · USAGE · DISK · PWD · MEMORY · ACTIVITY"
+echo "Sections: LOC · ENV · CONTEXT · PLAN · USAGE · DISK · PWD · MEMORY · ACTIVITY"
 echo ""
 echo "Commands:"
 echo "  /cortex          — show current config"

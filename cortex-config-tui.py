@@ -12,7 +12,7 @@ SECTIONS = [
     ("loc",      "Location (city, time, weather)"),
     ("env",      "Environment (version, model, cost)"),
     ("context",  "Context window progress bar"),
-    ("plan",     "Plan usage limits (5h + 7d)"),
+    ("plan",     "Plan usage limits (5h, 7d, spend)"),
     ("usage",    "Usage (lines, tokens, cache, burn)"),
     ("disk",     "Disk usage"),
     ("pwd",      "Working directory + git status"),
@@ -23,6 +23,7 @@ SECTIONS = [
 PLAN_SUBS = [
     ("5h", "Plan: 5-hour rate limit bar"),
     ("7d", "Plan: 7-day rate limit bar"),
+    ("spend", "Plan: spend limit bar (gateway)"),
 ]
 
 ACTIVITY_SUBS = [

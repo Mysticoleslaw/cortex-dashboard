@@ -12,7 +12,8 @@
   },
   "plan": {
     "5h": true,
-    "7d": true
+    "7d": true,
+    "spend": true
   },
   "activity": {
     "1d": true,
