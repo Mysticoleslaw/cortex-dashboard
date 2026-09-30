@@ -4,28 +4,18 @@
 
 input=$(cat)
 NOW=$(date +%s)
+CACHE_DIR="${CORTEX_CACHE_DIR:-/tmp}"
 
 # ── Config ──
+# Read once: space-separated list of disabled keys, e.g. " disk plan.7d "
+# (anything missing from the config counts as enabled)
 CORTEX_CONFIG="$HOME/.claude/cortex-config.json"
-section_enabled() {
-    local section="$1"
-    if [ -f "$CORTEX_CONFIG" ]; then
-        local val=$(jq -r "if .sections.${section} == false then \"false\" else \"true\" end" "$CORTEX_CONFIG" 2>/dev/null)
-        [ "$val" = "true" ]
-    else
-        return 0  # default: all enabled
-    fi
-}
-
-subsection_enabled() {
-    local category="$1" sub="$2"
-    if [ -f "$CORTEX_CONFIG" ]; then
-        local val=$(jq -r "if .\"${category}\".\"${sub}\" == false then \"false\" else \"true\" end" "$CORTEX_CONFIG" 2>/dev/null)
-        [ "$val" = "true" ]
-    else
-        return 0  # default: enabled when key missing
-    fi
-}
+DISABLED=" $(jq -r '[
+    (.sections // {} | to_entries[] | select(.value == false) | .key),
+    (.plan // {} | to_entries[] | select(.value == false) | "plan." + .key)
+] | join(" ")' "$CORTEX_CONFIG" 2>/dev/null) "
+section_enabled()    { [[ "$DISABLED" != *" $1 "* ]]; }
+subsection_enabled() { [[ "$DISABLED" != *" $1.$2 "* ]]; }
 
 # ── Cache helpers ──
 # File modification time (BSD stat on macOS, GNU stat on Linux)
@@ -60,6 +50,7 @@ eval "$(echo "$input" | jq -r '
     "SESSION_NAME=\(sh(.session_name))",
     "COST=\(sh(.cost.total_cost_usd // 0))",
     "DURATION_MS=\(sh(.cost.total_duration_ms // 0 | floor))",
+    "API_MS=\(sh(.cost.total_api_duration_ms // 0 | floor))",
     "LINES_ADD=\(sh(.cost.total_lines_added // 0))",
     "LINES_DEL=\(sh(.cost.total_lines_removed // 0))",
     "PCT=\(sh(.context_window.used_percentage // 0 | floor))",
@@ -119,8 +110,27 @@ log_usage() {
     rmdir "$HISTORY_LOCK" 2>/dev/null
 }
 
+# ── Active-minute logging (drives the activity heatmap) ──
+# A minute counts as active when any session did work in it (cost or API time
+# moved since that session's last render). Idle sessions and refresh ticks don't
+# count, and parallel sessions share one timeline instead of stacking.
+ACTIVITY_LOG="$HOME/.claude/activity-minutes.log"
+log_activity() {
+    local sid="${1//[^A-Za-z0-9-]/}" cost="$2" api_ms="$3"
+    [ -n "$sid" ] || return 0
+    local state="$CACHE_DIR/claude-statusline-sess-$sid" sig="$cost|$api_ms" last=""
+    [ -f "$state" ] && last=$(cat "$state")
+    [ "$sig" = "$last" ] && return 0
+    echo "$sig" > "$state"
+    # First sight of a session that hasn't called the API yet isn't activity
+    [ -z "$last" ] && [ "$api_ms" = "0" ] && return 0
+    local minute=$(date '+%Y-%m-%d %H:%M')
+    [ "$(tail -n 1 "$ACTIVITY_LOG" 2>/dev/null)" = "$minute" ] || echo "$minute" >> "$ACTIVITY_LOG"
+}
+
 # Log in background to avoid blocking
 log_usage "$SESSION_ID" "$DURATION_MS" "$COST" &
+log_activity "$SESSION_ID" "$COST" "$API_MS" &
 
 # ── Formatting helpers ──
 # Seconds → "42m", "1h 54m", "3d 4h"
@@ -159,7 +169,7 @@ printf '%b' "${D}──${RESET} ${C}${W}CORTEX${RESET} ${D}·${RESET} ${D}by Cla
 
 # ── LOC: Location + Time + Weather ──
 if section_enabled loc; then
-WEATHER_CACHE="/tmp/claude-statusline-weather"
+WEATHER_CACHE="$CACHE_DIR/claude-statusline-weather"
 WEATHER_MAX_AGE=1800  # 30 minutes
 
 if cache_stale "$WEATHER_CACHE" "$WEATHER_MAX_AGE"; then
@@ -296,7 +306,7 @@ fi
 
 # ── DISK usage ──
 if section_enabled disk; then
-DISK_CACHE="/tmp/claude-statusline-disk"
+DISK_CACHE="$CACHE_DIR/claude-statusline-disk"
 DISK_CACHE_AGE=60  # 1 minute
 
 if cache_stale "$DISK_CACHE" "$DISK_CACHE_AGE"; then
@@ -319,7 +329,7 @@ if section_enabled pwd; then
 DIRNAME="${DIR##*/}"
 
 # Cache git info per directory (5s TTL) so parallel sessions don't share state
-GIT_CACHE="/tmp/claude-statusline-git-$(printf '%s' "$DIR" | cksum | cut -d' ' -f1)"
+GIT_CACHE="$CACHE_DIR/claude-statusline-git-$(printf '%s' "$DIR" | cksum | cut -d' ' -f1)"
 GIT_CACHE_AGE=5
 
 if cache_stale "$GIT_CACHE" "$GIT_CACHE_AGE"; then
@@ -386,7 +396,7 @@ fi
 
 # ── ACTIVITY heatmap ──
 if section_enabled activity; then
-HEATMAP_CACHE="/tmp/claude-statusline-heatmap"
+HEATMAP_CACHE="$CACHE_DIR/claude-statusline-heatmap"
 HEATMAP_CACHE_AGE=30  # refresh every 30 seconds
 
 if cache_stale "$HEATMAP_CACHE" "$HEATMAP_CACHE_AGE" && [ -f "$HOME/.claude/usage-heatmap.py" ]; then

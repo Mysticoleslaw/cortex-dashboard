@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 
 HISTORY_FILE = os.path.expanduser("~/.claude/usage-history.tsv")
+ACTIVITY_FILE = os.path.expanduser("~/.claude/activity-minutes.log")
+GAP_FILL_MIN = 5  # idle gaps up to this long between active minutes still count
 CONFIG_FILE = os.path.expanduser("~/.claude/cortex-config.json")
 
 
@@ -36,6 +38,56 @@ C4 = "\033[38;5;46m"
 COLORS = [C0, C1, C2, C3, C4]
 
 BARS = [" ", "▁", "▂", "▃", "▅", "▆", "█"]
+
+
+def load_activity():
+    """Active minutes from activity-minutes.log, with short gaps filled.
+
+    Each line is one minute ("YYYY-MM-DD HH:MM") in which any session did work.
+    Gaps of up to GAP_FILL_MIN between active minutes count as active too, so
+    time spent reading output or typing the next prompt isn't lost.
+    """
+    minutes = set()
+    if os.path.exists(ACTIVITY_FILE):
+        with open(ACTIVITY_FILE) as f:
+            for line in f:
+                try:
+                    minutes.add(datetime.strptime(line.strip(), "%Y-%m-%d %H:%M"))
+                except ValueError:
+                    continue
+
+    ordered = sorted(minutes)
+    for prev, cur in zip(ordered, ordered[1:]):
+        gap = int((cur - prev).total_seconds() // 60)
+        if 1 < gap <= GAP_FILL_MIN:
+            minutes.update(prev + timedelta(minutes=i) for i in range(1, gap))
+
+    daily = defaultdict(float)
+    hourly = defaultdict(float)
+    for m in minutes:
+        day = m.strftime("%Y-%m-%d")
+        daily[day] += 1
+        hourly[(day, m.hour)] += 1
+    first_day = ordered[0].strftime("%Y-%m-%d") if ordered else None
+    return daily, hourly, first_day
+
+
+def load_usage():
+    """Merge active-minute data with legacy per-session history.
+
+    Days before the activity log existed fall back to usage-history.tsv, which
+    records whole-session wall-clock time (inflated by idle and parallel
+    sessions), so those values are capped at 60 min/hour and 24h/day.
+    """
+    daily, hourly, first_day = load_activity()
+    legacy_daily, legacy_hourly = load_history()
+    for day, mins in legacy_daily.items():
+        if first_day is None or day < first_day:
+            daily[day] = min(mins, 1440)
+    for (day, h), mins in legacy_hourly.items():
+        if first_day is None or day < first_day:
+            hourly[(day, h)] = min(mins, 60)
+    return daily, hourly
 
 
 def load_history():
@@ -92,7 +144,7 @@ def bar_level(minutes, thresholds=(1, 10, 30, 60, 120, 180)):
 
 
 def render():
-    daily, hourly = load_history()
+    daily, hourly = load_usage()
     today = datetime.now().date()
     total_mins = sum(daily.values())
     total_hours = total_mins / 60

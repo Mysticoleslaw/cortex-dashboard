@@ -55,14 +55,20 @@ Claude Code pipes JSON session data to your statusline script on every update. C
 
 The installer also sets `statusLine.refreshInterval` to 30 seconds (unless you've already set one), so the clock and reset countdowns stay current while a session is idle. All JSON fields are read in a single `jq` pass, so a render takes about 0.1s.
 
-The activity heatmap maintains a lightweight usage log (`~/.claude/usage-history.tsv`) that records session duration and cost per day. This builds up over time into the 52-week contribution grid.
+The activity heatmap measures **active time**, not how long sessions stay open. Every render checks whether that session did work since its last render (its cost or API time moved). If it did, the current minute is appended to `~/.claude/activity-minutes.log`. As a result:
+
+- Idle sessions and refresh ticks don't count.
+- Parallel sessions share one timeline, so five background agents working the same hour count as one hour, not five.
+- Gaps of up to 5 minutes between active minutes are filled in, so reading output and typing the next prompt still count.
+
+Cortex also keeps a per-session log (`~/.claude/usage-history.tsv`) with wall-clock duration and cost. Days recorded before the activity log existed fall back to it, capped at 60 min/hour and 24h/day.
 
 ### Data Flow
 
 ```
 Claude Code → JSON stdin → cortex.sh → dashboard output
                               ↓
-                     usage-history.tsv → usage-heatmap.py → activity grid
+          activity-minutes.log + usage-history.tsv → usage-heatmap.py → activity grid
 ```
 
 ### Caching
@@ -83,9 +89,21 @@ Cortex caches expensive operations to stay fast:
 ├── statusline-command.sh  # Main dashboard script
 ├── usage-heatmap.py       # Activity heatmap renderer
 ├── cortex-config.json     # Section toggle config
+├── cortex-config-tui.py   # Interactive config TUI (`cortex-config`)
 ├── commands/cortex.md     # /cortex slash command
-└── usage-history.tsv      # Session history (auto-generated)
+├── activity-minutes.log   # Active minutes for the heatmap (auto-generated)
+└── usage-history.tsv      # Per-session duration + cost (auto-generated)
 ```
+
+Caches live in `/tmp/claude-statusline-*` (override with `CORTEX_CACHE_DIR`).
+
+## Tests
+
+```bash
+./tests/run.sh
+```
+
+Renders the dashboard against fixture payloads in a throwaway HOME and cache directory, so it never touches your real `~/.claude`. It covers every section, config toggles, concurrent history writes, active-minute logging, and heatmap math.
 
 ## Uninstall
 
@@ -93,7 +111,7 @@ Cortex caches expensive operations to stay fast:
 ./uninstall.sh
 ```
 
-This removes the scripts and clears caches. Your usage history is preserved.
+This removes the scripts, the config TUI, the `/cortex` command, the `statusLine` setting, and all caches. Your config, usage history, and activity log are preserved.
 
 ## Reading the Dashboard
 
@@ -180,6 +198,8 @@ Each row is hidden when its window is missing from the statusline JSON (free tie
 | ♦ Ref | `0` | Reference pointers to external systems |
 
 ### ACTIVITY
+All rows measure active minutes: time when any Claude Code session was doing work (see [How It Works](#how-it-works)).
+
 | Row | What it shows |
 |-----|---------------|
 | **1d** | Today's 24 hours — each bar = 1 hour (full bar = 60 min of use) |
